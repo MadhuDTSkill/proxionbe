@@ -3,6 +3,7 @@ from langchain_core.messages import trim_messages, AIMessage, HumanMessage
 from uuid import uuid4  
 from channels.db import database_sync_to_async
 from chats_app import models
+from config import context_encrypt_storage
 from ai.graphs import graphs
 
 class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
@@ -37,7 +38,7 @@ class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
         
     async def graph_connect(self):
         try :
-            self.proxion_agent_graph = graphs.ProxionAgentGraph()
+            self.proxion_agent_graph = graphs.ProxionAgentGraph(self.chat)
             return True
         except Exception as e:
             await self.send_exception(str(e))

@@ -32,12 +32,13 @@ def router(state):
 
 
 class ProxionAgentGraph:
-    def __init__(self):
+    def __init__(self, chat = None):
         self.llm = ChatOpenAI(
             model_name = "llama-3.3-70b-versatile",
             base_url="https://api.groq.com/openai/v1",
             api_key = os.environ.get("GROQ_API_KEY")
         )
+        self.chat = chat
         self.all_tools = []
     
     def create_graph(self):

@@ -76,7 +76,7 @@ class ContextEncryptStorage:
     def get_current_consumer_object(self, default: Optional[Any] = None) -> Optional[Any]:
         """Get the current consumer object."""
         return self._storage.data.get('current_consumer_object', default)
-    
+        
     def show(self):
         """Print the current thread-local storage."""
         self._initialize_storage()
