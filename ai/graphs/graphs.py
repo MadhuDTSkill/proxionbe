@@ -87,9 +87,5 @@ class ProxionAgentGraph:
     
     def run(self, input_message):
         graph = self.init_graph()
-        return self.get_image(graph)
+        # return self.get_image(graph)
         return self.get_result(graph, input_message)
-    
-    
-p = ProxionAgentGraph()
-p.run("What is the weather in New York?")

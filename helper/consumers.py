@@ -36,7 +36,13 @@ class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
             return True
         
     async def graph_connect(self):
-        proxion_agent = graphs.ProxionAgentGraph()    
+        try :
+            self.proxion_agent_graph = graphs.ProxionAgentGraph()
+            return True
+        except Exception as e:
+            await self.send_exception(str(e))
+            return False
+
     
     async def send_exception(self, msg=''):
         await self.send_json({
