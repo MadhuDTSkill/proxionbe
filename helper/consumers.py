@@ -2,7 +2,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from langchain_core.messages import trim_messages, AIMessage, HumanMessage
 from uuid import uuid4  
 from channels.db import database_sync_to_async
-from chats_app import models
+from chats_app import models, serializers
 from config import context_encrypt_storage
 from ai.graphs import graphs
 
@@ -38,12 +38,21 @@ class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
         
     async def graph_connect(self):
         try :
-            self.proxion_agent_graph = graphs.ProxionAgentGraph(self.chat)
+            self.graph : graphs.ProxionAgentGraph = graphs.ProxionAgentGraph(self.chat, self.user, self)
+            await self.graph.init_graph()
             return True
         except Exception as e:
             await self.send_exception(str(e))
             return False
 
+    @database_sync_to_async
+    def save_llm_response(self, data):
+        serializer = serializers.LLMResponseSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return True
+        return False
+    
     
     async def send_exception(self, msg=''):
         await self.send_json({
@@ -59,10 +68,18 @@ class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
         })
     
     async def send_llm_response(self, data = {}):
-        await self.send_json({
-            'type' : "llm_response",
-            'data': data
-        })
+        status = await self.save_llm_response(data)
+        if status:
+            await self.send_json({
+                'type' : "llm_response",
+                'data': data
+            })
+        else:
+            await self.send_json({
+                'type' : "llm_response",
+                'data': data
+            })
+            await self.send_exception("Error saving LLM response")
 
     @classmethod
     async def generate_random_id(cls):

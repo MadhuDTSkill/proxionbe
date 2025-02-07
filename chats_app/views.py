@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
-from .models import Chat
-from .serializers import ChatSerializer
+from .models import Chat, LLMResponse
+from .serializers import ChatSerializer, LLMResponseSerializer
 
 class ChatViewSet(ModelViewSet):
     queryset = Chat.objects.all()
@@ -53,3 +53,8 @@ class ChatViewSet(ModelViewSet):
         }
     
         return Response(response_data)
+    
+    
+class LLMResponseViewSet(ModelViewSet):
+    queryset = LLMResponse.objects.all()
+    serializer_class = LLMResponseSerializer

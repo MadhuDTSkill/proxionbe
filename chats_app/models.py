@@ -23,3 +23,12 @@ class Chat(UUIDPrimaryKey, TimeLine, IsActiveModel):
             # self.name = get_name(self.first_prompt)
         super().save(*args, **kwargs)
 
+
+class LLMResponse(UUIDPrimaryKey, TimeLine):
+    chat = models.ForeignKey(Chat, on_delete=models.CASCADE, related_name='llm_responses')
+    prompt = models.TextField()
+    response = models.TextField()
+    tool_responses = models.JSONField(default=list,null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
