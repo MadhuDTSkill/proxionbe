@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
-from .models import Chat, LLMResponse
-from .serializers import ChatSerializer, LLMResponseSerializer
+from rest_framework.generics import ListAPIView, RetrieveDestroyAPIView
+from .models import Chat, LLMResponse, ChatNotes
+from .serializers import ChatSerializer, LLMResponseSerializer, ChatNotesSerializer
 
 class ChatViewSet(ModelViewSet):
     queryset = Chat.objects.all()
@@ -54,7 +55,29 @@ class ChatViewSet(ModelViewSet):
     
         return Response(response_data)
     
+class ChatNotesListView(ListAPIView):
+
+    queryset = ChatNotes.objects.all()
+    serializer_class = ChatNotesSerializer
+
+    def get_queryset(self):
+        return super().get_queryset().filter(chat__user = self.request.user)
+
+class ChatNoteRetrieveDeleteView(RetrieveDestroyAPIView):
+    queryset = ChatNotes.objects.all()
+    serializer_class = ChatNotesSerializer
     
-class LLMResponseViewSet(ModelViewSet):
+    def get_object(self):
+        chat_id = self.kwargs['chat_id']
+        return self.queryset.get_or_create(chat_id=chat_id)[0]
+
+class LLMResponseListView(ListAPIView):
+    
     queryset = LLMResponse.objects.all()
     serializer_class = LLMResponseSerializer
+    
+    def get_queryset(self):
+        chat_id = self.kwargs['chat_id']
+        return super().get_queryset().filter(chat_id=chat_id)
+    
+    

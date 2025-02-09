@@ -43,6 +43,7 @@ class ProxionAgentGraph:
     def __init__(self, chat : Chat, user : User, consumer : object):
         self.llm = ChatGroq(
             model = "llama3-70b-8192",
+            temperature=0.1
         )
         self.chat = chat
         self.user = user

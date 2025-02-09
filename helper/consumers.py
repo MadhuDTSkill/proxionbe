@@ -1,3 +1,4 @@
+import asyncio
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from langchain_core.messages import trim_messages, AIMessage, HumanMessage
 from uuid import uuid4  
@@ -5,6 +6,7 @@ from channels.db import database_sync_to_async
 from chats_app import models, serializers
 from config import context_encrypt_storage
 from ai.graphs import graphs
+
 
 class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
     
@@ -57,14 +59,18 @@ class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
     async def send_exception(self, msg=''):
         await self.send_json({
             'type' : "exception",
-            'content': msg
+            "data" : {
+                'content': msg
+            }
         })
         await self.close()
         
     async def send_status(self, msg = ''):
         await self.send_json({
             'type' : "status",
-            'content': msg
+            "data" : {
+              'content': msg    
+            }
         })
     
     async def send_llm_response(self, data = {}):
@@ -80,6 +86,10 @@ class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
                 'data': data
             })
             await self.send_exception("Error saving LLM response")
+    
+    async def send_json(self, *args, **kwargs):
+        await asyncio.sleep(0.1)
+        await super().send_json(*args, **kwargs)
 
     @classmethod
     async def generate_random_id(cls):

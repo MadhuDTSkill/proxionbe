@@ -6,10 +6,10 @@ from helper.models import UUIDPrimaryKey, TimeLine, IsActiveModel
 class Chat(UUIDPrimaryKey, TimeLine, IsActiveModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chats')
     name = models.CharField(max_length=100, null=True, blank=True)
-    
+    is_new = models.BooleanField(default=False)
     
     class Meta:
-        ordering = ['-updated_at', '-created_at']
+        ordering = ['created_at']
 
     def __str__(self) -> str:
         return self.name
@@ -31,4 +31,12 @@ class LLMResponse(UUIDPrimaryKey, TimeLine):
     tool_responses = models.JSONField(default=list,null=True, blank=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['created_at']
+        
+        
+class ChatNotes(UUIDPrimaryKey, TimeLine):
+    chat = models.OneToOneField(Chat, on_delete=models.CASCADE, related_name='chat_notes')
+    notes = models.JSONField(default=dict)
+    
+    class Meta:
+        ordering = ['created_at']

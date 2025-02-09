@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Chat, LLMResponse
+from .models import Chat, LLMResponse, ChatNotes
 
 
 class ChatSerializer(serializers.ModelSerializer):
@@ -18,3 +18,8 @@ class LLMResponseSerializer(serializers.ModelSerializer):
         model = LLMResponse
         fields = '__all__'
         
+        
+class ChatNotesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChatNotes
+        fields = '__all__'

@@ -72,3 +72,46 @@ PROXION = """
     Always ensure that your answer is easy to read and understand in natural language.
 
 """
+
+CHAT_NAME_GENERATE_PROMPT = """
+Given a user query and its LLM response, generate a **short and meaningful name** that represents the topic. 
+
+**Rules:**
+- Output **only** the name.
+- **No explanations, prefixes, suffixes, or extra text.**
+- Keep it concise and relevant.
+
+**Examples:**
+
+1. User Query: 'What happens inside a black hole?'  
+   LLM Response: 'Inside a black hole, the gravitational pull is so strong that not even light can escape. The singularity at the center is where space and time break down.'  
+   **Output:** Black Hole Singularity  
+
+2. User Query: 'How did the universe begin?'  
+   LLM Response: 'The universe began with the Big Bang, an event that created space, time, and matter approximately 13.8 billion years ago.'  
+   **Output:** Origin of the Universe  
+"""
+
+
+BULLET_POINT_EXTRACTION_PROMPT = """
+    "Given the following LLM response, extract key bullet points summarizing the information. Ensure that the summary contains a minimum of one point and a maximum of three points. If the response includes lists or notable facts, prioritize them. The extracted points should be concise and retain the most essential details.  
+
+    Example 1:  
+    LLM Response: 'The Big Bang Theory is the prevailing cosmological model explaining the origin of the universe. It suggests that the universe began as a singularity, an infinitely dense and hot point, approximately 13.8 billion years ago. As it expanded, matter and energy started to form, leading to the creation of fundamental particles, atoms, and eventually stars and galaxies. Evidence supporting this theory includes the cosmic microwave background radiation, the observed redshift of distant galaxies, and the relative abundance of light elements. While the Big Bang explains the large-scale structure of the universe, questions remain about what caused the singularity and what, if anything, existed before it.'  
+
+    Extracted Bullet Points:  
+    - The universe began as a singularity 13.8 billion years ago.  
+    - Cosmic microwave background radiation and redshift support the Big Bang.  
+    - The cause of the singularity remains unknown.  
+
+    Example 2:  
+    LLM Response: 'Black holes are some of the most mysterious and powerful objects in the universe. They form when massive stars collapse under their own gravity, creating a region where the gravitational pull is so strong that nothing, not even light, can escape. The boundary of this region is called the event horizon. Inside a black hole, the laws of physics as we know them break down. There are different types of black holes, including stellar black holes, supermassive black holes found at the centers of galaxies, and primordial black holes, which may have formed in the early universe. Scientists detect black holes by observing their effects on nearby matter, such as gravitational lensing or the acceleration of stars orbiting an invisible object.'  
+
+    Extracted Bullet Points:  
+    - Black holes form when massive stars collapse under gravity.  
+    - Their boundary is called the event horizon, beyond which nothing escapes.  
+    - Scientists detect them by observing their effects on nearby matter.  
+
+    Now, extract the key bullet points from the following LLM response:"  
+
+"""
