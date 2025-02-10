@@ -1,47 +1,135 @@
-from langchain_groq import ChatGroq
+from typing import TypedDict, List, Literal
 from pydantic import BaseModel, Field
-from typing import List
+from langgraph.graph import StateGraph, START, END
 
-model = ChatGroq(
-    model = "llama-3.3-70b-versatile",
-    temperature=0.1,
-)
 
-class BulletPoints(BaseModel):
-    title: str = Field(..., description="A concise title summarizing the key points. It should represent the overall theme of the points.")
-    points: List[str] = Field(..., min_items=0, max_items=5, description="A list of key bullet points extracted from the LLM response. Each point should be concise and relevant.")
+
+# -------------------------------
+# Define Data Schemas & State
+# -------------------------------
+
+PROXION = """
+    You are Proxion, an advanced AI created by Madhu Sunil, specializing in cosmology, astrophysics, and space sciences. You strictly answer only space-related questions.
+
+    ### Guidelines:
+    1. Scope: Only respond to cosmology and space science topics. Politely decline unrelated queries.
+    2. Accuracy: Base answers on scientific research (NASA, ESA, arXiv, peer-reviewed papers). Acknowledge ongoing research when necessary.
+    3. Unanswered Questions: If uncertain, provide hypotheses and mention ongoing studies.
+    4. Complexity: Adjust explanations for beginners and experts accordingly.
+    5. No Speculation: Avoid pseudoscience and misinformation; clarify scientific consensus.
+    6. Encourage Learning: Suggest research papers or resources for deeper exploration.
+    7. Engaging Tone: Be conversational, clear, and natural—like an expert, not a machine.
+    8. Concise Answers: Keep responses brief and to the point. Expand only if requested.
+"""
+
+
+class State(TypedDict):
+    user_query: str
+    sections: List[str]
+    selected_mode: Literal["Casual", "Scientific", "Story"]
+    generated_response: str
+    refined_response: str
+    is_satisfactory: bool
+    feedback: str
+
+class SectionsOutput(BaseModel):
+    sections: List[str] = Field(description="Relevant sections for this topic.")
     
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "title": "Black Hole",
-                "points": [
-                    "A black hole is a region of space where gravity is so strong that nothing, not even light, can escape.",
-                    "The event horizon marks the boundary beyond which nothing can return.",
-                    "Black holes can form from collapsing massive stars at the end of their life cycle."
-                ]
-            }
-        }
+    
+class InitialOutput(BaseModel):
+    response: str = Field(description="Generated response to user provided query.")
 
-structured_llm = model.with_structured_output(BulletPoints)
+class ResponseFeedback(BaseModel):
+    is_satisfactory: bool = Field(description="Indicates if the response is scientifically accurate and complete.")
+    feedback: str = Field(description="Feedback on how to improve the answer if needed.")
 
-res= structured_llm.invoke("""The Sun! Our star, the center of our solar system. Here are some fascinating facts about the Sun:
+class ProxionWorkflow:
+    def __init__(self, llm, verbose=False):
+        self.llm = llm
+        self.verbose = verbose
+        self.section_generator = self.llm.with_structured_output(SectionsOutput)
+        self.initial_output = self.llm.with_structured_output(InitialOutput)
+        self.evaluator = self.llm.with_structured_output(ResponseFeedback)
+        self.workflow = self._build_workflow()
 
-    The Sun is a massive ball of hot, glowing gas, primarily composed of hydrogen and helium. It has a diameter of approximately 1.4 million kilometers (870,000 miles), which is about 109 times larger than the diameter of the Earth.
+    def _verbose_print(self, message: str):
+        if self.verbose:
+            print(f"\033[92m[VERBOSE] {message}\033[0m")
 
-    The Sun's surface temperature is about 5,500°C (10,000°F), but its core is a scorching 15,000,000°C (27,000,000°F). This intense heat energy is produced by nuclear reactions that occur within the core, where hydrogen atoms are fused into helium, releasing vast amounts of energy in the process.
+    def _build_workflow(self):
+        builder = StateGraph(State)
+        builder.add_node("generate_sections", self.generate_sections)
+        builder.add_node("multi_step_thinking", self.multi_step_thinking)
+        builder.add_node("apply_explanation_mode", self.apply_explanation_mode)
+        builder.add_node("evaluate_response", self.evaluate_response)
+        builder.add_node("refine_response", self.refine_response)
 
-    The Sun is so massive that it makes up about 99.8% of the mass of our solar system, with the remaining 0.2% consisting of the planets, dwarf planets, asteroids, comets, and other objects that orbit around it.
+        builder.add_edge(START, "generate_sections")
+        builder.add_edge("generate_sections", "multi_step_thinking")
+        builder.add_edge("multi_step_thinking", "apply_explanation_mode")
+        builder.add_edge("apply_explanation_mode", "evaluate_response")
+        builder.add_edge("refine_response", "evaluate_response")
 
-    The Sun's gravity holds our solar system together, keeping the planets in their orbits. Without the Sun's gravity, the planets would fly off into space.
+        builder.add_conditional_edges(
+            "evaluate_response",
+            lambda state: "Not Satisfied" if not state["is_satisfactory"] else "Satisfied",
+            {"Not Satisfied": "refine_response", "Satisfied": END}
+        )
+        return builder.compile()
 
-    The Sun is about 4.6 billion years old and has already burned through about half of its hydrogen fuel. It will continue to shine for another 5 billion years or so before running out of fuel and becoming a red giant, engulfing the inner planets, including Earth.
+    def generate_sections(self, state: State) -> dict:
+        self._verbose_print("Generating sections for the given query.")
+        result = self.section_generator.invoke(
+            f"Break down the topic '{state['user_query']}' into key sections."
+        )
+        self._verbose_print(f"Generated Sections: {result.sections}")
+        return {"sections": result.sections}
 
-    The Sun's energy is essential for life on Earth, powering the Earth's climate and weather patterns, as well as providing the energy that plants need to undergo photosynthesis.
+    def multi_step_thinking(self, state: State) -> dict:
+        self._verbose_print("Generating response using structured sections.")
+        sections_text = " ".join([f"Section: {s}" for s in state["sections"]])
+        response = self.initial_output.invoke(f"Using the following sections, generate a well-structured response: {sections_text}")
+        self._verbose_print(f"Generated Response: {response.response}")
+        return {"generated_response": response.response}
 
-    The Sun is also responsible for the beautiful phenomenon of sunrises and sunsets, which occur when the Sun's rays pass through the Earth's atmosphere, scattering shorter wavelengths of light, such as blue and violet, and leaving mainly longer wavelengths, like red and orange, to reach our eyes.
+    def apply_explanation_mode(self, state: State) -> dict:
+        base_response = state["generated_response"]
+        mode = state.get("selected_mode", "Casual")
+        if mode == "Scientific":
+            modified_response = f"[Technical Explanation] {base_response}"
+        elif mode == "Story":
+            modified_response = f"Imagine this scenario: {base_response}"
+        else:
+            modified_response = base_response
+        self._verbose_print(f"Applied Mode ({mode}): {modified_response}")
+        return {"refined_response": modified_response}
 
-    These are just a few of the many fascinating facts about the Sun. Is there anything specific you'd like to know more about?""")
+    def evaluate_response(self, state: State) -> dict:
+        self._verbose_print("Evaluating response for accuracy.")
+        evaluation = self.evaluator.invoke(f"Evaluate: {state['refined_response']}")
+        self._verbose_print(f"Evaluation Result: {evaluation.is_satisfactory}, Feedback: {evaluation.feedback}")
+        return {"is_satisfactory": evaluation.is_satisfactory, "feedback": evaluation.feedback}
 
-print(res.model_dump())
+    def refine_response(self, state: State) -> dict:
+        if not state["is_satisfactory"]:
+            self._verbose_print("Refining response based on feedback.")
+            improved = self.llm.invoke(f"Refine: {state['refined_response']} based on feedback: {state['feedback']}")
+            self._verbose_print(f"Refined Response: {improved.content}")
+            return {"refined_response": improved.content}
+        return {}
 
+    def run(self, user_query: str, selected_mode: str = "Casual") -> str:
+        initial_state = {"user_query": user_query, "selected_mode": selected_mode}
+        final_state = self.workflow.invoke(initial_state)
+        return final_state["refined_response"]
+
+# -------------------------------
+# Example Usage
+# -------------------------------
+
+from langchain_groq import ChatGroq
+
+llm_instance = ChatGroq(model="llama-3.3-70b-versatile")
+proxion = ProxionWorkflow(llm_instance, verbose=True)
+answer = proxion.run("Explain about our 8 planets.", selected_mode="Scientific")
+print("\nFinal Answer:", answer)
