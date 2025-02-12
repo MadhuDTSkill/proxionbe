@@ -143,7 +143,7 @@ class SectionsOutput(BaseModel):
     
 
 class ExpansionSectionsOutput(BaseModel):
-    expansion_sections: List[str] = Field(
+    expansion_sections: List[str] = Field(min_items=1, max_items=3,
         description="Follow-up topics that expand upon the refined response. "
                     "These sections suggest possible areas of further inquiry based on the given answer. "
                     "Users may explore these by asking additional questions."
@@ -163,8 +163,9 @@ class ResponseFeedback(BaseModel):
     requires_tool_call: bool = Field(description="Indicates whether additional external knowledge, real-time data, or the latest sources (e.g., Wikipedia, Arxiv, DuckDuckGo) are required to enhance the response.")
 
 class ProxionWorkflow:
-    def __init__(self, llm : ChatGroq, verbose=False):
+    def __init__(self, llm : ChatGroq, tool_llm_instance : ChatGroq, verbose=False):
         self.llm : ChatGroq = llm
+        self.tool_llm : ChatGroq = tool_llm_instance
         self.verbose = verbose
         self.tools : List[BaseTool] = [wikipedia_tool, calculator_tool, web_url_tool, developer_biography_tool, duckduckgo_search_tool]
         
@@ -172,7 +173,7 @@ class ProxionWorkflow:
         self.section_generator = self.llm.with_structured_output(SectionsOutput)
         self.initial_output = self.llm.with_structured_output(InitialOutput)
         self.evaluator = self.llm.with_structured_output(ResponseFeedback)
-        self.knowledge_retriever = self.llm.bind_tools(self.tools)
+        self.knowledge_retriever = self.tool_llm.bind_tools(self.tools)
         self.expansion_sections_generator = self.llm.with_structured_output(ExpansionSectionsOutput)
         self.workflow = self._build_workflow()
 
@@ -243,7 +244,7 @@ class ProxionWorkflow:
     def validate_query(self, state: State) -> dict:
         self._verbose_print("Validating user query.")
         result : ValidationOutput = self.validation.invoke(self._get_message(f"Is the query '{state['user_query']}' related to cosmology or asking about chatbot name or developer details?"))
-        self._verbose_print(f"Validation Result: {result.is_valid}")
+        self._verbose_print(f"Needs Refinement : {'Yes' if result.is_valid else 'No'}")
         return {"is_valid": result.is_valid, "final_response": result.response}
 
 
@@ -344,7 +345,6 @@ class ProxionWorkflow:
         refined_response = state["refined_response"]
         feedback = state["feedback"]
         
-        
         retrieval_prompt = (
             f"Given the following user query:\n\n"
             f"{user_query}\n\n"
@@ -357,22 +357,28 @@ class ProxionWorkflow:
         response = self.knowledge_retriever.invoke(self._get_message(retrieval_prompt))
         tools_by_name = {tool.name: tool for tool in self.tools}
         tool_responses = {}
-        tool_call_retries = 0
-        
+
         for tool_call in response.tool_calls:
-            tool = tools_by_name[tool_call["name"]]
-            try:
-                observation = tool.invoke(tool_call["args"])
-                tool_call_retries = 0
-            except groq.BadRequestError:
-                
-                
-                
-            tool_responses[tool_call["name"]] = observation
-            self._verbose_print(f"{tool_call['name']} Tool Response: \n\n {observation}")
+            tool = tools_by_name.get(tool_call["name"])
+            if not tool:
+                self._verbose_print(f"Warning: Tool '{tool_call['name']}' not found.")
+                continue
+
+            retries = 3
+            for attempt in range(1, retries + 1):
+                try:
+                    observation = tool.invoke(tool_call["args"])
+                    tool_responses[tool_call["name"]] = observation
+                    self._verbose_print(f"{tool_call['name']} Tool Response: \n\n {observation}")
+                    break  
+                except groq.BadRequestError as e:
+                    self._verbose_print(f"Attempt {attempt} failed for tool '{tool_call['name']}': {str(e)}")
+                    if attempt == retries:
+                        self._verbose_print(f"Max retries reached for tool '{tool_call['name']}'. Skipping...")
+                        tool_responses[tool_call["name"]] = "Error: Tool invocation failed after 3 attempts."
 
         return {"tool_responses": tool_responses}
-        
+
         
     def refine_response(self, state: State) -> dict:
         self._verbose_print("Refining response based on feedback and tool responses.")
@@ -403,7 +409,7 @@ class ProxionWorkflow:
 
         expansion_prompt = (
             f"Based on the following refined response:\n\n{refined_response}\n\n"
-            f"Generate a list of follow-up topics that naturally expand on the provided answer. "
+            f"Generate a list of follow-up topics (1-3) that naturally expand on the provided answer. "
             f"Each topic should be framed as a potential inquiry area that the user may explore further."
         )
 
@@ -417,22 +423,7 @@ class ProxionWorkflow:
         self._verbose_print("Generating final response by combining refined response with expansion sections.")
 
         refined_response = state["refined_response"]
-        expansion_sections = state["expansion_sections"]  # Use already generated expansion sections
-
-        # Use LLM to merge the refined response and expansion sections naturally
-        final_prompt = (
-            f"Combine the following refined response with the relevant expansion sections in a structured and natural way:\n\n"
-            f"Refined Response:\n{refined_response}\n\n"
-            f"Expansion Sections:\n{expansion_sections}\n\n"
-            f"Ensure the final response is well-structured, engaging, and seamlessly integrates the expansion sections."
-        )
-
-        final_result = self.llm.invoke(self._get_message(final_prompt))
-        final_response_text = final_result.content.strip()
-
-        self._verbose_print(f"Final Response:\n{final_response_text}")
-
-        return {"final_response": final_response_text}
+        return {"final_response": refined_response}
 
 
     def run(self, user_query: str, selected_mode: str = "Casual") -> str:
@@ -445,8 +436,10 @@ class ProxionWorkflow:
 # -------------------------------
 
 
-llm_instance = ChatGroq(model="llama-3.3-70b-versatile")
+# llm_instance = ChatGroq(model="llama-3.3-70b-versatile")
+llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
+tool_llm_instance = ChatGroq(model="llama-3.1-8b-instant")
 
-proxion = ProxionWorkflow(llm_instance, verbose=True)
+proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
 answer = proxion.run("Is muliverse there ?", selected_mode="Scientific")
 print("\n\nProxion:", answer)
