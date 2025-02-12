@@ -1,3 +1,4 @@
+import groq
 from typing import TypedDict, List, Literal, Dict
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, START, END
@@ -98,10 +99,10 @@ def calculator_tool(expression: Annotated[str, "A string containing a mathematic
     Returns:
         float: The result of the evaluated expression or an error message if invalid.
     """
-    # Regular expression to match valid expressions
+    
     valid_pattern = r'^[\d\s+\-*/().]+$'
     
-    # Validate the expression
+    
     if not re.match(valid_pattern, expression):
         return "Error: Invalid expression. Only numbers and +, -, *, / operators are allowed."
     
@@ -120,16 +121,34 @@ class State(TypedDict):
     is_valid: bool
     user_query: str
     sections: List[str]
-    selected_mode: Literal["Casual", "Scientific", "Story"]
+    expansion_sections : List[str]
+    selected_mode: Literal["Casual", "Scientific", "Story", "Kids"]
     generated_response: str
     tool_responses : Dict[str, str]
     refined_response: str
     final_response: str
     is_satisfactory: bool
+    requires_tool_call : bool
     feedback: str
 
 class SectionsOutput(BaseModel):
-    sections: List[str] = Field(description="Relevant sections for this topic.")
+    sections: List[str] = Field(
+        description="Relevant sections for this topic. The response will always contain general sections based on the user query. "
+                    "If the question involves speculative ideas or hypotheses, additional perspectives will be appended: "
+                    "Scientific View (scientific explanation based on physics and cosmology), "
+                    "Theoretical View (hypotheses and speculative models), "
+                    "Philosophical View (exploring meaning and existential implications), "
+                    "Proxion View (AI-generated perspective creatively inferred from knowledge)."
+    )
+    
+
+class ExpansionSectionsOutput(BaseModel):
+    expansion_sections: List[str] = Field(
+        description="Follow-up topics that expand upon the refined response. "
+                    "These sections suggest possible areas of further inquiry based on the given answer. "
+                    "Users may explore these by asking additional questions."
+    )
+
     
 class ValidationOutput(BaseModel):
     is_valid: bool = Field(description="Indicates if the user query is related to cosmology or asking about chatbot name or developer details.")
@@ -141,6 +160,7 @@ class InitialOutput(BaseModel):
 class ResponseFeedback(BaseModel):
     is_satisfactory: bool = Field(description="Indicates if the response is scientifically accurate and complete.")
     feedback: str = Field(description="Feedback on how to improve the answer if needed.")
+    requires_tool_call: bool = Field(description="Indicates whether additional external knowledge, real-time data, or the latest sources (e.g., Wikipedia, Arxiv, DuckDuckGo) are required to enhance the response.")
 
 class ProxionWorkflow:
     def __init__(self, llm : ChatGroq, verbose=False):
@@ -153,6 +173,7 @@ class ProxionWorkflow:
         self.initial_output = self.llm.with_structured_output(InitialOutput)
         self.evaluator = self.llm.with_structured_output(ResponseFeedback)
         self.knowledge_retriever = self.llm.bind_tools(self.tools)
+        self.expansion_sections_generator = self.llm.with_structured_output(ExpansionSectionsOutput)
         self.workflow = self._build_workflow()
 
         graph_png = self.workflow.get_graph(xray=True).draw_mermaid_png()
@@ -162,15 +183,15 @@ class ProxionWorkflow:
 
     def _verbose_print(self, message: str):
         if self.verbose:
-            print(f"\033[92m[VERBOSE] {message}\033[0m")
+            print(f"\n\033[92m[VERBOSE] {message}\033[0m")
             
     
     def _get_history(self):
         return [
-            HumanMessage(content="What is black hole?"),
-            AIMessage(content= "Introduction to Black Holes: A black hole is a region in space where the gravitational pull is so strong that nothing, including light, can escape. It is formed when a massive star collapses in on itself, causing a massive amount of matter to be compressed into an incredibly small space, resulting in an intense gravitational field. Gravity and Attraction: The gravity of a black hole is so strong because it is directly related to the mass and density of the object. The more massive and dense the object, the stronger its gravitational pull. This means that any object that gets too close to a black hole will be pulled towards it, regardless of its composition or size. Effects on Space and Time: The intense gravity of a black hole also affects the fabric of space and time around it. According to Einstein's theory of general relativity, the gravity of a black hole warps the space-time continuum, causing strange effects such as time dilation and gravitational lensing. Comparison to Other Celestial Objects: Black holes are often compared to other celestial objects such as neutron stars and white dwarfs, but they are unique in their ability to warp space and time. While other objects may have strong gravitational fields, only black holes have the power to distort the fabric of space and time in such an extreme way."),
-            HumanMessage(content="Is that powerful ?"),
-            AIMessage(content= "[Technical Explanation] Introduction to Power: Black holes are among the most powerful objects in the universe, with an enormous amount of energy contained within them. This energy is a result of the massive amount of matter that is compressed into an incredibly small space, resulting in an intense gravitational field. Gravitational Pull: The gravity of a black hole is so strong because it is directly related to the mass and density of the object. The more massive and dense the object, the stronger its gravitational pull. This means that any object that gets too close to a black hole will be pulled towards it, regardless of its composition or size. Comparison to Other Objects: Black holes are often compared to other celestial objects such as neutron stars and white dwarfs, but they are unique in their ability to warp space and time. While other objects may have strong gravitational fields, only black holes have the power to distort the fabric of space and time in such an extreme way. Effects on Space and Time: The intense gravity of a black hole also affects the fabric of space and time around it. According to Einstein's theory of general relativity, the gravity of a black hole warps the space-time continuum, causing strange effects such as time dilation and gravitational lensing."),
+            # HumanMessage(content="What is black hole?"),
+            # AIMessage(content= "Introduction to Black Holes: A black hole is a region in space where the gravitational pull is so strong that nothing, including light, can escape. It is formed when a massive star collapses in on itself, causing a massive amount of matter to be compressed into an incredibly small space, resulting in an intense gravitational field. Gravity and Attraction: The gravity of a black hole is so strong because it is directly related to the mass and density of the object. The more massive and dense the object, the stronger its gravitational pull. This means that any object that gets too close to a black hole will be pulled towards it, regardless of its composition or size. Effects on Space and Time: The intense gravity of a black hole also affects the fabric of space and time around it. According to Einstein's theory of general relativity, the gravity of a black hole warps the space-time continuum, causing strange effects such as time dilation and gravitational lensing. Comparison to Other Celestial Objects: Black holes are often compared to other celestial objects such as neutron stars and white dwarfs, but they are unique in their ability to warp space and time. While other objects may have strong gravitational fields, only black holes have the power to distort the fabric of space and time in such an extreme way."),
+            # HumanMessage(content="Is that powerful ?"),
+            # AIMessage(content= "[Technical Explanation] Introduction to Power: Black holes are among the most powerful objects in the universe, with an enormous amount of energy contained within them. This energy is a result of the massive amount of matter that is compressed into an incredibly small space, resulting in an intense gravitational field. Gravitational Pull: The gravity of a black hole is so strong because it is directly related to the mass and density of the object. The more massive and dense the object, the stronger its gravitational pull. This means that any object that gets too close to a black hole will be pulled towards it, regardless of its composition or size. Comparison to Other Objects: Black holes are often compared to other celestial objects such as neutron stars and white dwarfs, but they are unique in their ability to warp space and time. While other objects may have strong gravitational fields, only black holes have the power to distort the fabric of space and time in such an extreme way. Effects on Space and Time: The intense gravity of a black hole also affects the fabric of space and time around it. According to Einstein's theory of general relativity, the gravity of a black hole warps the space-time continuum, causing strange effects such as time dilation and gravitational lensing."),
         ]
             
     def _get_message(self, new_message : str):
@@ -184,7 +205,7 @@ class ProxionWorkflow:
     def _build_workflow(self):
         builder = StateGraph(State)
         
-        # Updating node names to be more descriptive
+        
         builder.add_node("Query Validation", self.validate_query)
         builder.add_node("Generate Relevant Sections", self.generate_sections)
         builder.add_node("Generate Initial Response", self.multi_step_thinking)
@@ -192,6 +213,7 @@ class ProxionWorkflow:
         builder.add_node("Evaluate Response Quality", self.evaluate_response)
         builder.add_node("Refine Response", self.refine_response)
         builder.add_node("Retrieve Knowledge & Tool Insights", self.extra_knowledge)
+        builder.add_node("Generate Expansion Sections", self.generate_expansion_sections)
         builder.add_node("Finalize and Provide Response", self.final_response)
 
         builder.add_edge(START, "Query Validation")
@@ -200,6 +222,7 @@ class ProxionWorkflow:
         builder.add_edge("Apply Explanation Mode", "Evaluate Response Quality")
         builder.add_edge("Refine Response", "Evaluate Response Quality")
         builder.add_edge("Retrieve Knowledge & Tool Insights", "Refine Response")
+        builder.add_edge("Generate Expansion Sections", "Finalize and Provide Response")
         builder.add_edge("Finalize and Provide Response", END)
 
         builder.add_conditional_edges(
@@ -210,8 +233,8 @@ class ProxionWorkflow:
 
         builder.add_conditional_edges(
             "Evaluate Response Quality",
-            lambda state: "Needs Refinement" if not state["is_satisfactory"] else "Response is Final",
-            {"Needs Refinement": "Retrieve Knowledge & Tool Insights", "Response is Final": "Finalize and Provide Response"}
+            lambda state: "Needs Refinement" if not state["is_satisfactory"] or state["requires_tool_call"]  else "Response is Final",
+            {"Needs Refinement": "Retrieve Knowledge & Tool Insights", "Response is Final": "Generate Expansion Sections"}
         )
 
         return builder.compile()
@@ -223,6 +246,7 @@ class ProxionWorkflow:
         self._verbose_print(f"Validation Result: {result.is_valid}")
         return {"is_valid": result.is_valid, "final_response": result.response}
 
+
     def generate_sections(self, state: State) -> dict:
         self._verbose_print("Generating sections for the given query.")
         result : SectionsOutput = self.section_generator.invoke(self._get_message(
@@ -231,22 +255,48 @@ class ProxionWorkflow:
         self._verbose_print(f"Generated Sections: {result.sections}")
         return {"sections": result.sections}
 
+
     def multi_step_thinking(self, state: State) -> dict:
         self._verbose_print("Generating response using structured sections.")
+        
+        user_query = state["user_query"]
         sections_text = " ".join([f"Section: {s}" for s in state["sections"]])
-        response : InitialOutput = self.initial_output.invoke(self._get_message(f"Using the following sections, generate a well-structured response: {sections_text}"))
+        
+        prompt = (
+            f"User Query: {user_query}\n\n"
+            f"Using the following sections, generate a well-structured response:\n\n"
+            f"{sections_text}"
+        )
+
+        response: InitialOutput = self.initial_output.invoke(self._get_message(prompt))
+        
         self._verbose_print(f"Generated Response: {response.response}")
         return {"generated_response": response.response}
-    
+
+
     def apply_explanation_mode(self, state: State) -> dict:
         base_response = state["generated_response"]
+        user_query = state["user_query"]  
         mode = state.get("selected_mode", "Casual")
         
-        # Define different explanation prompts
+        
         explanation_prompts = {
-            "Scientific": f"Provide a technical and detailed explanation of the following response with precise terminology and a formal tone:\n\n{base_response}",
-            "Story": f"Transform the following response into an engaging and imaginative story format:\n\n{base_response}",
-            "Casual": f"Rephrase the following response in a friendly, easy-to-understand manner suitable for everyday conversation:\n\n{base_response}"
+            "Scientific": (
+                f"User Query: {user_query}\n\n"
+                f"Provide a technical and detailed explanation of the following response with precise terminology and a formal tone:\n\n{base_response}"
+            ),
+            "Story": (
+                f"User Query: {user_query}\n\n"
+                f"Transform the following response into an engaging and imaginative story format:\n\n{base_response}"
+            ),
+            "Casual": (
+                f"User Query: {user_query}\n\n"
+                f"Rephrase the following response in a friendly, easy-to-understand manner suitable for everyday conversation:\n\n{base_response}"
+            ),
+            "Kids": (
+                f"User Query: {user_query}\n\n"
+                f"Explain the following response in a very simple and fun way so that a child can understand. Use short sentences and easy words:\n\n{base_response}"
+            ),
         }
         
         if mode in explanation_prompts:
@@ -254,36 +304,47 @@ class ProxionWorkflow:
             modified_response = self.llm.invoke(self._get_message(explanation_prompts[mode]))
             modified_response = modified_response.content
         else:
-            modified_response = base_response  # Default to original response if mode is not recognized
+            modified_response = base_response  
 
         self._verbose_print(f"Applied Mode ({mode}): {modified_response}")
         return {"refined_response": modified_response}
 
 
     def evaluate_response(self, state: State) -> dict:
-        self._verbose_print("Evaluating response for accuracy and Markdown formatting.")
+        self._verbose_print("Evaluating response for accuracy, completeness, and Markdown formatting.")
+
+        user_query = state["user_query"]  
 
         evaluation_prompt = (
-            f"Evaluate the following response for accuracy and completeness. Also, ensure that the response follows proper Markdown formatting "
-            f"with correct usage of headings, lists, code blocks (if needed), and inline formatting.\n\n"
+            f"User Query: {user_query}\n\n"
+            f"Evaluate the following response for accuracy, completeness, and relevance to the user query. "
+            f"Ensure that the response follows proper Markdown formatting, including correct usage of headings, lists, "
+            f"code blocks (if needed), and inline formatting.\n\n"
             f"Response:\n{state['refined_response']}\n\n"
-            f"Return feedback on both the response quality and Markdown structure."
+            f"Additionally, determine whether external knowledge or real-time sources (e.g., Wikipedia, Arxiv, DuckDuckGo) "
+            f"are necessary to enhance the response. If so, indicate the need for a tool call.\n\n"
+            f"Return feedback on the response quality, Markdown structure, and whether additional tool-based retrieval is required."
         )
         
-        evaluation : ResponseFeedback = self.evaluator.invoke(self._get_message(evaluation_prompt))
+        evaluation: ResponseFeedback = self.evaluator.invoke(self._get_message(evaluation_prompt))
 
-        self._verbose_print(f"Evaluation Result: {evaluation.is_satisfactory}, Feedback: {evaluation.feedback}")
+        self._verbose_print(f"Evaluation Result: {evaluation.is_satisfactory}, Feedback: {evaluation.feedback}, Requires Tool Call: {evaluation.requires_tool_call}")
 
-        return {"is_satisfactory": evaluation.is_satisfactory, "feedback": evaluation.feedback}
+        return {
+            "is_satisfactory": evaluation.is_satisfactory, 
+            "feedback": evaluation.feedback,
+            "requires_tool_call": evaluation.requires_tool_call  
+        }
+
 
     def extra_knowledge(self, state: State) -> dict:
         self._verbose_print("Fetching additional knowledge for the given query.")
         
         user_query = state["user_query"]
         refined_response = state["refined_response"]
-        feedback = state.get["feedback"]
+        feedback = state["feedback"]
         
-        # Constructing the query for the knowledge retriever
+        
         retrieval_prompt = (
             f"Given the following user query:\n\n"
             f"{user_query}\n\n"
@@ -296,26 +357,37 @@ class ProxionWorkflow:
         response = self.knowledge_retriever.invoke(self._get_message(retrieval_prompt))
         tools_by_name = {tool.name: tool for tool in self.tools}
         tool_responses = {}
-
+        tool_call_retries = 0
+        
         for tool_call in response.tool_calls:
             tool = tools_by_name[tool_call["name"]]
-            observation = tool.invoke(tool_call["args"])
+            try:
+                observation = tool.invoke(tool_call["args"])
+                tool_call_retries = 0
+            except groq.BadRequestError:
+                
+                
+                
             tool_responses[tool_call["name"]] = observation
             self._verbose_print(f"{tool_call['name']} Tool Response: \n\n {observation}")
 
         return {"tool_responses": tool_responses}
         
+        
     def refine_response(self, state: State) -> dict:
         self._verbose_print("Refining response based on feedback and tool responses.")
 
+        user_query = state["user_query"]  
         tool_responses = state.get("tool_responses", {})
-        tool_responses_text = "\n".join([f"{tool}: {response}" for tool, response in tool_responses.items()])
+        
+        tool_responses_text = "\n".join([f"{tool}: {response}" for tool, response in tool_responses.items()]) or "No additional tool responses available."
 
         refinement_prompt = (
-            f"Refine the following response:\n\n"
-            f"{state['refined_response']}\n\n"
-            f"Based on the feedback: {state['feedback']}\n\n"
-            f"And using the following tool responses:\n{tool_responses_text}"
+            f"User Query:\n{user_query}\n\n"
+            f"Initial Response:\n{state['refined_response']}\n\n"
+            f"Feedback:\n{state['feedback']}\n\n"
+            f"Tool Responses:\n{tool_responses_text}\n\n"
+            f"Refine the response based on the feedback and tool responses while ensuring it remains accurate, well-structured, and relevant to the user query."
         )
 
         improved = self.llm.invoke(self._get_message(refinement_prompt))
@@ -324,8 +396,44 @@ class ProxionWorkflow:
         return {"refined_response": improved.content}
 
     
+    def generate_expansion_sections(self, state: State) -> dict:
+        self._verbose_print("Generating expansion sections based on the refined response.")
+
+        refined_response = state["refined_response"]
+
+        expansion_prompt = (
+            f"Based on the following refined response:\n\n{refined_response}\n\n"
+            f"Generate a list of follow-up topics that naturally expand on the provided answer. "
+            f"Each topic should be framed as a potential inquiry area that the user may explore further."
+        )
+
+        result: ExpansionSectionsOutput = self.expansion_sections_generator.invoke(self._get_message(expansion_prompt))
+
+        self._verbose_print(f"Generated Expansion Sections: {result.expansion_sections}")
+        return {"expansion_sections": result.expansion_sections}
+    
+    
     def final_response(self, state: State) -> dict:
-        return {"final_response": state["refined_response"]}
+        self._verbose_print("Generating final response by combining refined response with expansion sections.")
+
+        refined_response = state["refined_response"]
+        expansion_sections = state["expansion_sections"]  # Use already generated expansion sections
+
+        # Use LLM to merge the refined response and expansion sections naturally
+        final_prompt = (
+            f"Combine the following refined response with the relevant expansion sections in a structured and natural way:\n\n"
+            f"Refined Response:\n{refined_response}\n\n"
+            f"Expansion Sections:\n{expansion_sections}\n\n"
+            f"Ensure the final response is well-structured, engaging, and seamlessly integrates the expansion sections."
+        )
+
+        final_result = self.llm.invoke(self._get_message(final_prompt))
+        final_response_text = final_result.content.strip()
+
+        self._verbose_print(f"Final Response:\n{final_response_text}")
+
+        return {"final_response": final_response_text}
+
 
     def run(self, user_query: str, selected_mode: str = "Casual") -> str:
         initial_state = {"user_query": user_query, "selected_mode": selected_mode}
@@ -340,5 +448,5 @@ class ProxionWorkflow:
 llm_instance = ChatGroq(model="llama-3.3-70b-versatile")
 
 proxion = ProxionWorkflow(llm_instance, verbose=True)
-# answer = proxion.run("How it forms ?", selected_mode="Scientific")
-# print("\n\nProxion:", answer)
+answer = proxion.run("Is muliverse there ?", selected_mode="Scientific")
+print("\n\nProxion:", answer)
