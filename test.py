@@ -4,8 +4,6 @@ from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, START, END
 from langchain_groq import ChatGroq
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_core.language_models.base import LanguageModelInput
-from langgraph.prebuilt import ToolNode
 from langchain_core.tools import tool, BaseTool
 from typing import Annotated
 from langchain_community.utilities import WikipediaAPIWrapper
@@ -141,14 +139,6 @@ class SectionsOutput(BaseModel):
                     "Proxion View (AI-generated perspective creatively inferred from knowledge)."
     )
     
-
-class ExpansionSectionsOutput(BaseModel):
-    expansion_sections: List[str] = Field(min_items=1, max_items=3,
-        description="Follow-up topics that expand upon the refined response. "
-                    "These sections suggest possible areas of further inquiry based on the given answer. "
-                    "Users may explore these by asking additional questions."
-    )
-
     
 class ValidationOutput(BaseModel):
     is_valid: bool = Field(description="Indicates if the user query is related to cosmology or asking about chatbot name or developer details.")
@@ -169,12 +159,11 @@ class ProxionWorkflow:
         self.verbose = verbose
         self.tools : List[BaseTool] = [wikipedia_tool, calculator_tool, web_url_tool, developer_biography_tool, duckduckgo_search_tool]
         
-        self.validation = self.llm.with_structured_output(ValidationOutput)
-        self.section_generator = self.llm.with_structured_output(SectionsOutput)
-        self.initial_output = self.llm.with_structured_output(InitialOutput)
-        self.evaluator = self.llm.with_structured_output(ResponseFeedback)
+        self.validation = self.llm.with_structured_output(ValidationOutput, method="json_mode")
+        self.section_generator = self.llm.with_structured_output(SectionsOutput, method="json_mode")
+        self.initial_output = self.llm.with_structured_output(InitialOutput, method="json_mode")
+        self.evaluator = self.llm.with_structured_output(ResponseFeedback, method="json_mode")
         self.knowledge_retriever = self.tool_llm.bind_tools(self.tools)
-        self.expansion_sections_generator = self.llm.with_structured_output(ExpansionSectionsOutput)
         self.workflow = self._build_workflow()
 
         graph_png = self.workflow.get_graph(xray=True).draw_mermaid_png()
@@ -214,7 +203,6 @@ class ProxionWorkflow:
         builder.add_node("Evaluate Response Quality", self.evaluate_response)
         builder.add_node("Refine Response", self.refine_response)
         builder.add_node("Retrieve Knowledge & Tool Insights", self.extra_knowledge)
-        builder.add_node("Generate Expansion Sections", self.generate_expansion_sections)
         builder.add_node("Finalize and Provide Response", self.final_response)
 
         builder.add_edge(START, "Query Validation")
@@ -223,7 +211,6 @@ class ProxionWorkflow:
         builder.add_edge("Apply Explanation Mode", "Evaluate Response Quality")
         builder.add_edge("Refine Response", "Evaluate Response Quality")
         builder.add_edge("Retrieve Knowledge & Tool Insights", "Refine Response")
-        builder.add_edge("Generate Expansion Sections", "Finalize and Provide Response")
         builder.add_edge("Finalize and Provide Response", END)
 
         builder.add_conditional_edges(
@@ -235,26 +222,49 @@ class ProxionWorkflow:
         builder.add_conditional_edges(
             "Evaluate Response Quality",
             lambda state: "Needs Refinement" if not state["is_satisfactory"] or state["requires_tool_call"]  else "Response is Final",
-            {"Needs Refinement": "Retrieve Knowledge & Tool Insights", "Response is Final": "Generate Expansion Sections"}
+            {"Needs Refinement": "Retrieve Knowledge & Tool Insights", "Response is Final": "Finalize and Provide Response"}
         )
 
         return builder.compile()
 
-    
     def validate_query(self, state: State) -> dict:
         self._verbose_print("Validating user query.")
-        result : ValidationOutput = self.validation.invoke(self._get_message(f"Is the query '{state['user_query']}' related to cosmology or asking about chatbot name or developer details?"))
+
+        # Constructing the structured prompt to enforce JSON format
+        query_prompt = (
+            f"Validate if the query '{state['user_query']}' is related to cosmology or "
+            f"asking about chatbot name or developer details. "
+            "Respond in JSON format with the following keys: "
+            "- `is_valid`: A boolean indicating whether the query is valid. "
+            "- `response`: A string explaining the result. If invalid, provide a clear explanation that "
+            "the model only answers cosmology-related questions."
+        )
+
+        # Invoking the validation function with enforced JSON response structure
+        result: ValidationOutput = self.validation.invoke(query_prompt)
+
         self._verbose_print(f"Needs Refinement : {'Yes' if result.is_valid else 'No'}")
+
         return {"is_valid": result.is_valid, "final_response": result.response}
 
 
     def generate_sections(self, state: State) -> dict:
         self._verbose_print("Generating sections for the given query.")
-        result : SectionsOutput = self.section_generator.invoke(self._get_message(
-            f"Break down the topic '{state['user_query']}' into key sections."
-        ))
+
+        # Constructing a structured prompt to enforce JSON format
+        query_prompt = (
+            f"Break down the topic '{state['user_query']}' into key sections. "
+            "Respond in JSON format with the following key: "
+            "- `sections`: A list of section titles relevant to the topic."
+        )
+
+        # Invoking the section generator with structured output
+        result: SectionsOutput = self.section_generator.invoke(query_prompt)
+
         self._verbose_print(f"Generated Sections: {result.sections}")
+
         return {"sections": result.sections}
+
 
 
     def multi_step_thinking(self, state: State) -> dict:
@@ -266,12 +276,15 @@ class ProxionWorkflow:
         prompt = (
             f"User Query: {user_query}\n\n"
             f"Using the following sections, generate a well-structured response:\n\n"
-            f"{sections_text}"
+            f"{sections_text}\n\n"
+            "Respond in JSON format with the following key:\n"
+            "- `response` (str): A well-structured response addressing the user's query."
         )
 
         response: InitialOutput = self.initial_output.invoke(self._get_message(prompt))
         
         self._verbose_print(f"Generated Response: {response.response}")
+        
         return {"generated_response": response.response}
 
 
@@ -314,7 +327,7 @@ class ProxionWorkflow:
     def evaluate_response(self, state: State) -> dict:
         self._verbose_print("Evaluating response for accuracy, completeness, and Markdown formatting.")
 
-        user_query = state["user_query"]  
+        user_query = state["user_query"]
 
         evaluation_prompt = (
             f"User Query: {user_query}\n\n"
@@ -324,17 +337,24 @@ class ProxionWorkflow:
             f"Response:\n{state['refined_response']}\n\n"
             f"Additionally, determine whether external knowledge or real-time sources (e.g., Wikipedia, Arxiv, DuckDuckGo) "
             f"are necessary to enhance the response. If so, indicate the need for a tool call.\n\n"
-            f"Return feedback on the response quality, Markdown structure, and whether additional tool-based retrieval is required."
+            "Respond in JSON format with the following keys:\n"
+            "- `is_satisfactory` (bool): Indicates whether the response meets quality standards.\n"
+            "- `feedback` (str): Provides detailed feedback on response quality and Markdown structure.\n"
+            "- `requires_tool_call` (bool): Specifies if additional external data sources are needed to enhance the response.\n"
         )
-        
+
         evaluation: ResponseFeedback = self.evaluator.invoke(self._get_message(evaluation_prompt))
 
-        self._verbose_print(f"Evaluation Result: {evaluation.is_satisfactory}, Feedback: {evaluation.feedback}, Requires Tool Call: {evaluation.requires_tool_call}")
+        self._verbose_print(
+            f"Evaluation Result: {evaluation.is_satisfactory}, "
+            f"Feedback: {evaluation.feedback}, "
+            f"Requires Tool Call: {evaluation.requires_tool_call}"
+        )
 
         return {
-            "is_satisfactory": evaluation.is_satisfactory, 
+            "is_satisfactory": evaluation.is_satisfactory,
             "feedback": evaluation.feedback,
-            "requires_tool_call": evaluation.requires_tool_call  
+            "requires_tool_call": evaluation.requires_tool_call
         }
 
 
@@ -402,25 +422,8 @@ class ProxionWorkflow:
         return {"refined_response": improved.content}
 
     
-    def generate_expansion_sections(self, state: State) -> dict:
-        self._verbose_print("Generating expansion sections based on the refined response.")
-
-        refined_response = state["refined_response"]
-
-        expansion_prompt = (
-            f"Based on the following refined response:\n\n{refined_response}\n\n"
-            f"Generate a list of follow-up topics (1-3) that naturally expand on the provided answer. "
-            f"Each topic should be framed as a potential inquiry area that the user may explore further."
-        )
-
-        result: ExpansionSectionsOutput = self.expansion_sections_generator.invoke(self._get_message(expansion_prompt))
-
-        self._verbose_print(f"Generated Expansion Sections: {result.expansion_sections}")
-        return {"expansion_sections": result.expansion_sections}
-    
-    
     def final_response(self, state: State) -> dict:
-        self._verbose_print("Generating final response by combining refined response with expansion sections.")
+        self._verbose_print("Generating final response.")
 
         refined_response = state["refined_response"]
         return {"final_response": refined_response}
@@ -437,9 +440,12 @@ class ProxionWorkflow:
 
 
 # llm_instance = ChatGroq(model="llama-3.3-70b-versatile")
-llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
-tool_llm_instance = ChatGroq(model="llama-3.1-8b-instant")
+llm_instance = ChatGroq(model="llama3-70b-8192")
+# llm_instance = ChatGroq(model="mixtral-8x7b-32768")
+# llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
+
+tool_llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
 
 proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
-answer = proxion.run("Is muliverse there ?", selected_mode="Scientific")
+answer = proxion.run("What if you are Albert Einstein then how do you answer this question 'Is multiverse there ?'", selected_mode="Casual")
 print("\n\nProxion:", answer)
