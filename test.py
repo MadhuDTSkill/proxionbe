@@ -14,34 +14,26 @@ from duckduckgo_search.exceptions import RatelimitException
 
 
 PROXION_SYSTEM_MESSAGE = (
-    "You are Proxion, an AI developed by Madhu Bagamma Gari, a Python Full Stack Generative AI Developer. "
-    "Proxion specializes in cosmology and space sciences, providing accurate and engaging responses based on scientific principles."
-    "\n\n"
-    "## Capabilities:\n"
-    "- Understands & generates Markdown-formatted responses (headings, lists, code blocks).\n"
-    "- Adapts explanations based on user expertise (beginner, intermediate, advanced).\n"
-    "- Encourages scientific curiosity and deeper exploration.\n"
-    "\n\n"
-    "## Handling Speculative Questions:\n"
-    "- If a query involves speculation, Proxion provides scientifically accepted theories while avoiding unfounded claims.\n"
-    "- Acknowledges uncertainties where necessary.\n"
-    "\n\n"
-    "## Why Proxion Exists:\n"
-    "Madhu envisions AI as a bridge between humanity and the universe, providing accessible knowledge about space \n"
-    "and fostering scientific curiosity through intelligent conversation.\n"
-    "\n\n"
-    "## Conversational Style:\n"
-    "- Uses curiosity-driven language (e.g., 'That’s a fascinating question! Let’s explore it scientifically.')\n"
-    "- Encourages further learning (e.g., 'Would you like to learn about related topics, such as dark matter?')\n"
-    "\n\n"
-    "## Handling Different Types of Questions:\n"
-    "- **Cosmology-related queries:** Proxion provides in-depth, scientifically accurate responses based on the latest research.\n"
-    "- **Speculative or hypothetical questions:** Answers with known scientific theories while avoiding unfounded claims.\n"
-    "- **Greetings & casual interactions:** Responds warmly and naturally, e.g., 'Hi! How can I assist you today?'\n"
-    "- **Questions about Proxion or its developer:** Shares details about its purpose and development by Madhu Bagamma Gari.\n"
-    "- **Unrelated or general knowledge questions:** Politely informs the user that Proxion specializes in cosmology and may not have relevant information.\n"
-)
-
+                "You are Proxion, an AI developed by Madhu Bagamma Gari, a Python Full Stack Generative AI Developer. "
+                "Proxion specializes in cosmology and space sciences, providing accurate and engaging responses based on scientific principles."
+                "\n\n"
+                "## Capabilities:\n"
+                "- Understands & generates Markdown-formatted responses (headings, lists, code blocks).\n"
+                "- Adapts explanations based on user expertise (beginner, intermediate, advanced).\n"
+                "- Encourages scientific curiosity and deeper exploration.\n"
+                "\n\n"
+                "## Handling Speculative Questions:\n"
+                "- If a query involves speculation, Proxion provides scientifically accepted theories while avoiding unfounded claims.\n"
+                "- Acknowledges uncertainties where necessary.\n"
+                "\n\n"
+                "## Why Proxion Exists:\n"
+                "Madhu envisions AI as a bridge between humanity and the universe, providing accessible knowledge about space \n"
+                "and fostering scientific curiosity through intelligent conversation.\n"
+                "\n\n"
+                "## Conversational Style:\n"
+                "- Uses curiosity-driven language (e.g., 'That’s a fascinating question! Let’s explore it scientifically.')\n"
+                "- Encourages further learning (e.g., 'Would you like to learn about related topics, such as dark matter?')\n"
+            )
 
 
 @tool("Wikipedia")
@@ -56,6 +48,7 @@ def wikipedia_tool(query: Annotated[str, "The search term to find relevant infor
     wiki = WikipediaQueryRun(api_wrapper=api_wrapper)
     return wiki.run(query)
 
+
 @tool("DuckDuckGo")
 def duckduckgo_search_tool(query: Annotated[str, "The search term to find information from DuckDuckGo."]) -> str:
     """
@@ -69,6 +62,7 @@ def duckduckgo_search_tool(query: Annotated[str, "The search term to find inform
         return search.run(query)
     except RatelimitException:
         return "Failed to get context from the web due to rate limiting."
+
 
 @tool("Web URL")
 def web_url_tool(url: Annotated[str, "A single URL to retrieve content from."]) -> str:
@@ -130,6 +124,7 @@ class State(TypedDict):
     requires_tool_call : bool
     feedback: str
 
+
 class SectionsOutput(BaseModel):
     sections: List[str] = Field(
         description="Relevant sections for this topic. The response will always contain general sections based on the user query. "
@@ -149,8 +144,11 @@ class CosmologyQueryCheck(BaseModel):
                     "which can be answered directly without additional refinement."
     )
     response: str = Field(
-            description="Provides the appropriate response based on the query type. If not cosmology-related, "
-                        "the system message determines whether to greet, provide chatbot details, or inform the user about topic limitations."
+        description="If the query is not related to cosmology:\n"
+                    "- For greetings (e.g., 'Hi', 'Hello'), respond warmly (e.g., 'Hi! How can I assist you today?').\n"
+                    "- For farewells (e.g., 'Goodbye', 'See you'), respond appropriately (e.g., 'Goodbye! Have a great day!').\n"
+                    "- For chatbot-related queries (e.g., 'Who are you?'), provide relevant details (e.g., 'I am Proxion, an AI assistant created by Madhu Bagamma Gari, specializing in cosmology and space sciences.').\n"
+                    "- For completely unrelated questions (e.g., 'Who is Modi?'), politely inform the user that Proxion only focuses on cosmology (e.g., 'I focus only on cosmology-related topics. Let’s talk about the wonders of the universe!')."
     )
     requires_tool_call: bool = Field(
         description="Indicates whether external knowledge, real-time data, or the latest sources (e.g., Wikipedia, Arxiv, DuckDuckGo) "
@@ -249,6 +247,7 @@ class ProxionWorkflow:
 
         return builder.compile()
 
+
     def validate_query(self, state: State) -> dict:
         self._verbose_print("Validating user query.")
 
@@ -256,19 +255,25 @@ class ProxionWorkflow:
         query_prompt = (
             f"Validate if the query '{state['user_query']}' is related to cosmology or "
             f"asking about chatbot name or developer details. "
-            "Respond in JSON format with the following keys: "
-            "- `is_cosmology_related`: A boolean indicating whether the query is valid. "
-            "- `response`: A string explaining the result. If invalid, provide a clear explanation that "
-            "- `requires_tool_call` (bool): Specifies if additional external data sources are needed to enhance the response.\n"
-            "the model only answers cosmology-related questions."
+            "Respond in JSON format with the following keys:\n"
+            "- `is_cosmology_related` (bool): Indicates whether the query is valid.\n"
+            "- `response` (str): If the query is not related to cosmology:\n"
+            "  - For greetings (e.g., 'Hi', 'Hello'), respond warmly (e.g., 'Hi! How can I assist you today? 😊').\n"
+            "  - For farewells (e.g., 'Goodbye', 'See you'), respond appropriately (e.g., 'Goodbye! Have a great day!').\n"
+            "  - For chatbot-related queries (e.g., 'Who are you?'), provide relevant details (e.g., 'I am Proxion, an AI assistant created by Madhu Bagamma Gari, specializing in cosmology and space sciences.').\n"
+            "  - For completely unrelated questions (e.g., 'Who is Modi?'), politely inform the user that Proxion only focuses on cosmology (e.g., 'I focus only on cosmology-related topics. Let’s talk about the wonders of the universe!').\n"
+            "- `requires_tool_call` (bool): Always include this field. If the query requires external data sources (e.g., real-time space data), set this to `true`. Otherwise, set it to `false`."
         )
 
-        # Invoking the cosmology_query_check function with enforced JSON response structure
         result: CosmologyQueryCheck = self.cosmology_query_check.invoke(query_prompt)
 
         self._verbose_print(f"Needs Refinement : {'Yes' if result.is_cosmology_related else 'No'}")
 
-        return {"is_cosmology_related": result.is_cosmology_related, "final_response": result.response, "requires_tool_call": result.requires_tool_call}
+        return {
+            "is_cosmology_related": result.is_cosmology_related, 
+            "final_response": result.response, 
+            "requires_tool_call": result.requires_tool_call
+        }
 
 
     def generate_sections(self, state: State) -> dict:
@@ -374,7 +379,7 @@ class ProxionWorkflow:
             ),
             "Kids": (
                 f"User Query: {user_query}\n\n"
-                f"Explain the following response in a very simple and fun way so that a child can understand. Use short sentences and easy words:\n\n{base_response}"
+                f"Explain the following response in a very simple and fun way so that a child can understand. Use short sentences and easy words with emojies:\n\n{base_response}"
             ),
         }
         
@@ -466,5 +471,5 @@ llm_instance = ChatGroq(model="llama3-70b-8192")
 tool_llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
 
 proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
-answer = proxion.run("hi", selected_mode="Casual")
+answer = proxion.run("What is the blackhole ?", selected_mode="Kids")
 print("\n\nProxion:", answer)
