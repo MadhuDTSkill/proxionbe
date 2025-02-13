@@ -155,10 +155,6 @@ class CosmologyQueryCheck(BaseModel):
                     "are required to enhance the response based on the user query."
     )
   
-  
-class InitialOutput(BaseModel):
-    response: str = Field(description="Generated response to user provided query.")
-
 
 class ResponseFeedback(BaseModel):
     is_satisfactory: bool = Field(description="Indicates if the response is scientifically accurate and complete.")
@@ -174,7 +170,6 @@ class ProxionWorkflow:
         
         self.cosmology_query_check = self.llm.with_structured_output(CosmologyQueryCheck, method="json_mode")
         self.section_generator = self.llm.with_structured_output(SectionsOutput, method="json_mode")
-        self.initial_output = self.llm.with_structured_output(InitialOutput, method="json_mode")
         self.evaluator = self.llm.with_structured_output(ResponseFeedback, method="json_mode")
         self.knowledge_retriever = self.tool_llm.bind_tools(self.tools)
         self.workflow = self._build_workflow()
@@ -198,7 +193,7 @@ class ProxionWorkflow:
         ]
       
             
-    def _get_message(self, new_message : str):
+    def _get_messages(self, new_message : str):
         messages = [
             SystemMessage(content=PROXION_SYSTEM_MESSAGE),
             *self._get_history(),
@@ -309,7 +304,7 @@ class ProxionWorkflow:
             f"What additional knowledge or tool call suggestions would improve this response?"
         )
 
-        response = self.knowledge_retriever.invoke(self._get_message(retrieval_prompt))
+        response = self.knowledge_retriever.invoke(self._get_messages(retrieval_prompt))
         tools_by_name = {tool.name: tool for tool in self.tools}
         tool_responses = {}
 
@@ -351,7 +346,7 @@ class ProxionWorkflow:
             f"Ensure the response integrates the tool responses appropriately while maintaining coherence."
         )
 
-        response = self.llm.invoke(self._get_message(prompt))
+        response = self.llm.invoke(self._get_messages(prompt))
         
         self._verbose_print(f"Generated Response: {response.content}")
         
@@ -385,7 +380,7 @@ class ProxionWorkflow:
         
         if mode in explanation_prompts:
             self._verbose_print(f"Re-invoking model for {mode} mode.")
-            modified_response = self.llm.invoke(self._get_message(explanation_prompts[mode]))
+            modified_response = self.llm.invoke(self._get_messages(explanation_prompts[mode]))
             modified_response = modified_response.content
         else:
             modified_response = base_response  
@@ -410,7 +405,7 @@ class ProxionWorkflow:
             "- `feedback` (str): Provides detailed feedback on response quality and Markdown structure.\n"
         )
 
-        evaluation: ResponseFeedback = self.evaluator.invoke(self._get_message(evaluation_prompt))
+        evaluation: ResponseFeedback = self.evaluator.invoke(self._get_messages(evaluation_prompt))
 
         self._verbose_print(
             f"Evaluation Result: {evaluation.is_satisfactory}, "
@@ -439,7 +434,7 @@ class ProxionWorkflow:
             f"Refine the response based on the feedback and tool responses while ensuring it remains accurate, well-structured, and relevant to the user query."
         )
 
-        improved = self.llm.invoke(self._get_message(refinement_prompt))
+        improved = self.llm.invoke(self._get_messages(refinement_prompt))
         
         self._verbose_print(f"Refined Response: {improved.content}")
         return {"refined_response": improved.content}
@@ -471,5 +466,5 @@ llm_instance = ChatGroq(model="llama3-70b-8192")
 tool_llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
 
 proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
-answer = proxion.run("What is the blackhole ?", selected_mode="Kids")
+answer = proxion.run("Hi ?", selected_mode="Kids")
 print("\n\nProxion:", answer)

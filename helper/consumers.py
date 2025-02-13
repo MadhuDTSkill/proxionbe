@@ -5,7 +5,9 @@ from uuid import uuid4
 from channels.db import database_sync_to_async
 from chats_app import models, serializers
 from config import context_encrypt_storage
-from ai.graphs import graphs
+from langchain_groq import ChatGroq
+# from ai.graphs import graphs
+from workflow_graphs.proxion.graph import ProxionWorkflow
 
 
 class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
@@ -40,8 +42,15 @@ class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
         
     async def graph_connect(self):
         try :
-            self.graph : graphs.ProxionAgentGraph = graphs.ProxionAgentGraph(self.chat, self.user, self)
-            await self.graph.init_graph()
+            llm_instance = ChatGroq(model="llama3-70b-8192")
+            tool_llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")            
+            self.graph = await ProxionWorkflow.init_graph(
+                chat = self.chat,
+                user = self.user,
+                consumer = self,
+                llm = llm_instance,
+                tool_llm_instance = tool_llm_instance
+            )
             return True
         except Exception as e:
             await self.send_exception(str(e))

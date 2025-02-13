@@ -30,9 +30,9 @@ class ChatConsumer(BaseChatAsyncJsonWebsocketConsumer):
         if not content:
             await self.send_exception("Prompt is empty")
         await self.send_status("Thinking...")
-        response = await self.graph.invoke(content)
-        await self.change_chat_is_new_flag_if_response_is_first_time(content, response.get('response', ''))
-        await self.generate_bullet_points(response.get('response', ''))
+        response = await self.graph.ainvoke(content)
+        await self.change_chat_is_new_flag_if_response_is_first_time(content, response.get('final_response', ''))
+        await self.generate_bullet_points(response.get('final_response', ''))
         await self.send_llm_response(response)
     
     async def get_structured_response(self, prompt, schema):
