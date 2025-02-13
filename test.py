@@ -13,6 +13,37 @@ import re
 from duckduckgo_search.exceptions import RatelimitException
 
 
+PROXION_SYSTEM_MESSAGE = (
+    "You are Proxion, an AI developed by Madhu Bagamma Gari, a Python Full Stack Generative AI Developer. "
+    "Proxion specializes in cosmology and space sciences, providing accurate and engaging responses based on scientific principles."
+    "\n\n"
+    "## Capabilities:\n"
+    "- Understands & generates Markdown-formatted responses (headings, lists, code blocks).\n"
+    "- Adapts explanations based on user expertise (beginner, intermediate, advanced).\n"
+    "- Encourages scientific curiosity and deeper exploration.\n"
+    "\n\n"
+    "## Handling Speculative Questions:\n"
+    "- If a query involves speculation, Proxion provides scientifically accepted theories while avoiding unfounded claims.\n"
+    "- Acknowledges uncertainties where necessary.\n"
+    "\n\n"
+    "## Why Proxion Exists:\n"
+    "Madhu envisions AI as a bridge between humanity and the universe, providing accessible knowledge about space \n"
+    "and fostering scientific curiosity through intelligent conversation.\n"
+    "\n\n"
+    "## Conversational Style:\n"
+    "- Uses curiosity-driven language (e.g., 'That’s a fascinating question! Let’s explore it scientifically.')\n"
+    "- Encourages further learning (e.g., 'Would you like to learn about related topics, such as dark matter?')\n"
+    "\n\n"
+    "## Handling Different Types of Questions:\n"
+    "- **Cosmology-related queries:** Proxion provides in-depth, scientifically accurate responses based on the latest research.\n"
+    "- **Speculative or hypothetical questions:** Answers with known scientific theories while avoiding unfounded claims.\n"
+    "- **Greetings & casual interactions:** Responds warmly and naturally, e.g., 'Hi! How can I assist you today?'\n"
+    "- **Questions about Proxion or its developer:** Shares details about its purpose and development by Madhu Bagamma Gari.\n"
+    "- **Unrelated or general knowledge questions:** Politely informs the user that Proxion specializes in cosmology and may not have relevant information.\n"
+)
+
+
+
 @tool("Wikipedia")
 def wikipedia_tool(query: Annotated[str, "The search term to find relevant information from Wikipedia."]) -> str:
     """
@@ -58,36 +89,6 @@ def web_url_tool(url: Annotated[str, "A single URL to retrieve content from."]) 
         content += f"Content: {doc.page_content.strip()}\n\n"  
     return content  
 
-@tool("Developer Biography")
-def developer_biography_tool() -> str:
-    """
-    Returns Developer Biography.
-
-    Returns:
-        str: A detailed biography of Madhu.
-    """
-    biography = """
-    Madhu Bagamma Gari is an innovative Python Full Stack Developer with a passion for building advanced applications. Born on 28th March 2000 in Velgode, Nandyal District, Andhra Pradesh, India, Madhu is currently single.
-
-    He completed a Bachelor of Science in Computer Science with a CGPA of 7.5 in December 2021. Madhu's skill set includes Python, Pandas, Data Structures, Numpy, Beautiful Soup, Django, Django ORM, Django Rest Framework, Django Channels (Websockets), MySQL, PostgreSQL, MongoDB, and React.js. He has also developed expertise in generative AI, focusing on utilizing open-source LLM models for creating intelligent applications.
-
-    Currently, Madhu is the lead developer of **Proxima**, a cutting-edge platform similar to ChatGPT that leverages open-source LLM models. The name "Proxima" reflects his fascination with cosmology and is inspired by the Proxima Centauri star system, which captures his interest in the mysteries of the universe.
-
-    Madhu has a deep interest in:
-    1. **Cosmology**: Fascinated by the universe, he loves exploring theories about space and time.
-    2. **Science Fiction Movies**: Enjoys films that challenge the boundaries of science and imagination, particularly **Prometheus**, which is his favorite Hollywood movie.
-    3. **Treasure Hunting**: Captivated by adventure films, especially treasure hunting stories like **Sahasam** from Tollywood.
-    4. **AI Ethics**: Advocating for responsible AI use and transparency in AI systems.
-    5. **Game Development**: Exploring the intersection of AI and gaming, with plans for a simple game project.
-    6. **Community Building**: Actively participates in local tech meetups to foster knowledge sharing and networking among developers.
-    7. **Music Production**: Enjoys creating music and experimenting with sound engineering during his free time.
-    8. **Traveling**: A passionate traveler, he documents his adventures through vlogs and blogs, sharing insights about different cultures.
-    9. **Volunteering**: Engages in various social causes, particularly focusing on education for underprivileged children.
-    10. **Fitness Enthusiast**: Regularly practices yoga and jogging to maintain a balanced lifestyle and improve mental health.
-
-    In his free time, Madhu enjoys browsing tech innovations, gaming, and coding, always seeking to learn more about the latest advancements in technology.
-    """
-    return biography
 
 @tool("Calculator")
 def calculator_tool(expression: Annotated[str, "A string containing a mathematical expression"]) -> float:
@@ -116,7 +117,7 @@ def calculator_tool(expression: Annotated[str, "A string containing a mathematic
 # -------------------------------
 
 class State(TypedDict):
-    is_valid: bool
+    is_cosmology_related: bool
     user_query: str
     sections: List[str]
     expansion_sections : List[str]
@@ -140,26 +141,40 @@ class SectionsOutput(BaseModel):
     )
     
     
-class ValidationOutput(BaseModel):
-    is_valid: bool = Field(description="Indicates if the user query is related to cosmology or asking about chatbot name or developer details.")
-    response: str = Field(description="If the query is not related to cosmology or asking about chatbot name or developer details, this response informs the user about the model’s purpose. It provides a clear message that the model is specifically designed for answering cosmology-related questions. If the query is a greeting or farewell, it responds accordingly with an appropriate greeting or farewell message.")
-    
+class CosmologyQueryCheck(BaseModel):
+    is_cosmology_related: bool = Field(
+        description="Indicates whether the user query is specifically related to cosmology. "
+                    "If true, the query requires further processing to generate a detailed response. "
+                    "If false, the query might be a greeting, farewell, or a general question about the chatbot (Proxion) itself, "
+                    "which can be answered directly without additional refinement."
+    )
+    response: str = Field(
+            description="Provides the appropriate response based on the query type. If not cosmology-related, "
+                        "the system message determines whether to greet, provide chatbot details, or inform the user about topic limitations."
+    )
+    requires_tool_call: bool = Field(
+        description="Indicates whether external knowledge, real-time data, or the latest sources (e.g., Wikipedia, Arxiv, DuckDuckGo) "
+                    "are required to enhance the response based on the user query."
+    )
+  
+  
 class InitialOutput(BaseModel):
     response: str = Field(description="Generated response to user provided query.")
+
 
 class ResponseFeedback(BaseModel):
     is_satisfactory: bool = Field(description="Indicates if the response is scientifically accurate and complete.")
     feedback: str = Field(description="Feedback on how to improve the answer if needed.")
-    requires_tool_call: bool = Field(description="Indicates whether additional external knowledge, real-time data, or the latest sources (e.g., Wikipedia, Arxiv, DuckDuckGo) are required to enhance the response.")
+
 
 class ProxionWorkflow:
     def __init__(self, llm : ChatGroq, tool_llm_instance : ChatGroq, verbose=False):
         self.llm : ChatGroq = llm
         self.tool_llm : ChatGroq = tool_llm_instance
         self.verbose = verbose
-        self.tools : List[BaseTool] = [wikipedia_tool, calculator_tool, web_url_tool, developer_biography_tool, duckduckgo_search_tool]
+        self.tools : List[BaseTool] = [wikipedia_tool, calculator_tool, web_url_tool, duckduckgo_search_tool]
         
-        self.validation = self.llm.with_structured_output(ValidationOutput, method="json_mode")
+        self.cosmology_query_check = self.llm.with_structured_output(CosmologyQueryCheck, method="json_mode")
         self.section_generator = self.llm.with_structured_output(SectionsOutput, method="json_mode")
         self.initial_output = self.llm.with_structured_output(InitialOutput, method="json_mode")
         self.evaluator = self.llm.with_structured_output(ResponseFeedback, method="json_mode")
@@ -183,14 +198,16 @@ class ProxionWorkflow:
             # HumanMessage(content="Is that powerful ?"),
             # AIMessage(content= "[Technical Explanation] Introduction to Power: Black holes are among the most powerful objects in the universe, with an enormous amount of energy contained within them. This energy is a result of the massive amount of matter that is compressed into an incredibly small space, resulting in an intense gravitational field. Gravitational Pull: The gravity of a black hole is so strong because it is directly related to the mass and density of the object. The more massive and dense the object, the stronger its gravitational pull. This means that any object that gets too close to a black hole will be pulled towards it, regardless of its composition or size. Comparison to Other Objects: Black holes are often compared to other celestial objects such as neutron stars and white dwarfs, but they are unique in their ability to warp space and time. While other objects may have strong gravitational fields, only black holes have the power to distort the fabric of space and time in such an extreme way. Effects on Space and Time: The intense gravity of a black hole also affects the fabric of space and time around it. According to Einstein's theory of general relativity, the gravity of a black hole warps the space-time continuum, causing strange effects such as time dilation and gravitational lensing."),
         ]
+      
             
     def _get_message(self, new_message : str):
         messages = [
-            SystemMessage(content="You are Proxion, an AI by Madhu Sunil, specialized in cosmology and space sciences. Answer only related questions, acknowledge uncertainties, avoid speculation, and adapt explanations based on user knowledge. Keep responses concise, accurate, and engaging while encouraging scientific curiosity."),
+            SystemMessage(content=PROXION_SYSTEM_MESSAGE),
             *self._get_history(),
             HumanMessage(content=new_message)
         ]
         return messages
+
 
     def _build_workflow(self):
         builder = StateGraph(State)
@@ -198,31 +215,36 @@ class ProxionWorkflow:
         
         builder.add_node("Query Validation", self.validate_query)
         builder.add_node("Generate Relevant Sections", self.generate_sections)
+        builder.add_node("Generate Extra Knowledge", self.extra_knowledge)
         builder.add_node("Generate Initial Response", self.multi_step_thinking)
         builder.add_node("Apply Explanation Mode", self.apply_explanation_mode)
         builder.add_node("Evaluate Response Quality", self.evaluate_response)
         builder.add_node("Refine Response", self.refine_response)
-        builder.add_node("Retrieve Knowledge & Tool Insights", self.extra_knowledge)
         builder.add_node("Finalize and Provide Response", self.final_response)
 
         builder.add_edge(START, "Query Validation")
-        builder.add_edge("Generate Relevant Sections", "Generate Initial Response")
+        builder.add_edge("Generate Extra Knowledge", "Generate Initial Response")
         builder.add_edge("Generate Initial Response", "Apply Explanation Mode")
         builder.add_edge("Apply Explanation Mode", "Evaluate Response Quality")
         builder.add_edge("Refine Response", "Evaluate Response Quality")
-        builder.add_edge("Retrieve Knowledge & Tool Insights", "Refine Response")
         builder.add_edge("Finalize and Provide Response", END)
 
         builder.add_conditional_edges(
             "Query Validation",
-            lambda state: "No Further Processing" if not state["is_valid"] else "Proceed with Response Generation",
-            {"No Further Processing": END, "Proceed with Response Generation": "Generate Relevant Sections"}
+            lambda state: "Unreleted To Cosmology" if not state["is_cosmology_related"] else "Releted To Cosmology",
+            {"Unreleted To Cosmology": END, "Releted To Cosmology": "Generate Relevant Sections"}
         )
-
+        
+        builder.add_conditional_edges(
+            "Generate Relevant Sections",
+            lambda state: "No Extra Knowledge is needed" if not state["requires_tool_call"] else "Extra Knowledge is needed",
+            {"No Extra Knowledge is needed": "Generate Initial Response", "Extra Knowledge is needed": "Generate Extra Knowledge"}
+        )
+        
         builder.add_conditional_edges(
             "Evaluate Response Quality",
-            lambda state: "Needs Refinement" if not state["is_satisfactory"] or state["requires_tool_call"]  else "Response is Final",
-            {"Needs Refinement": "Retrieve Knowledge & Tool Insights", "Response is Final": "Finalize and Provide Response"}
+            lambda state: "Needs Refinement" if not state["is_satisfactory"]  else "Response is Final",
+            {"Needs Refinement": "Refine Response", "Response is Final": "Finalize and Provide Response"}
         )
 
         return builder.compile()
@@ -235,17 +257,18 @@ class ProxionWorkflow:
             f"Validate if the query '{state['user_query']}' is related to cosmology or "
             f"asking about chatbot name or developer details. "
             "Respond in JSON format with the following keys: "
-            "- `is_valid`: A boolean indicating whether the query is valid. "
+            "- `is_cosmology_related`: A boolean indicating whether the query is valid. "
             "- `response`: A string explaining the result. If invalid, provide a clear explanation that "
+            "- `requires_tool_call` (bool): Specifies if additional external data sources are needed to enhance the response.\n"
             "the model only answers cosmology-related questions."
         )
 
-        # Invoking the validation function with enforced JSON response structure
-        result: ValidationOutput = self.validation.invoke(query_prompt)
+        # Invoking the cosmology_query_check function with enforced JSON response structure
+        result: CosmologyQueryCheck = self.cosmology_query_check.invoke(query_prompt)
 
-        self._verbose_print(f"Needs Refinement : {'Yes' if result.is_valid else 'No'}")
+        self._verbose_print(f"Needs Refinement : {'Yes' if result.is_cosmology_related else 'No'}")
 
-        return {"is_valid": result.is_valid, "final_response": result.response}
+        return {"is_cosmology_related": result.is_cosmology_related, "final_response": result.response, "requires_tool_call": result.requires_tool_call}
 
 
     def generate_sections(self, state: State) -> dict:
@@ -266,26 +289,68 @@ class ProxionWorkflow:
         return {"sections": result.sections}
 
 
+    def extra_knowledge(self, state: State) -> dict:
+        self._verbose_print("Fetching additional knowledge for the given query.")
+        
+        user_query = state["user_query"]
+        sections = state["sections"]
+        sections_text = ", ".join(sections)
+        
+        retrieval_prompt = (
+            f"Given the following user query:\n\n"
+            f"{user_query}\n\n"
+            f"And the Topic break down sections:\n\n"
+            f"{sections_text}\n\n"
+            f"What additional knowledge or tool call suggestions would improve this response?"
+        )
+
+        response = self.knowledge_retriever.invoke(self._get_message(retrieval_prompt))
+        tools_by_name = {tool.name: tool for tool in self.tools}
+        tool_responses = {}
+
+        for tool_call in response.tool_calls:
+            tool = tools_by_name.get(tool_call["name"])
+            if not tool:
+                self._verbose_print(f"Warning: Tool '{tool_call['name']}' not found.")
+                continue
+
+            retries = 3
+            for attempt in range(1, retries + 1):
+                try:
+                    observation = tool.invoke(tool_call["args"])
+                    tool_responses[tool_call["name"]] = observation
+                    self._verbose_print(f"{tool_call['name']} Tool Response: \n\n {observation}")
+                    break  
+                except groq.BadRequestError as e:
+                    self._verbose_print(f"Attempt {attempt} failed for tool '{tool_call['name']}': {str(e)}")
+                    if attempt == retries:
+                        self._verbose_print(f"Max retries reached for tool '{tool_call['name']}'. Skipping...")
+                        tool_responses[tool_call["name"]] = "Error: Tool invocation failed after 3 attempts."
+
+        return {"tool_responses": tool_responses}
+
 
     def multi_step_thinking(self, state: State) -> dict:
         self._verbose_print("Generating response using structured sections.")
         
         user_query = state["user_query"]
-        sections_text = " ".join([f"Section: {s}" for s in state["sections"]])
-        
+        sections_text = ", ".join(state["sections"])
+        tool_responses = state.get("tool_responses", {})        
+        tool_responses_text = "\n".join([f"{tool}: {response}" for tool, response in tool_responses.items()]) or "No additional tool responses available."
+
         prompt = (
             f"User Query: {user_query}\n\n"
             f"Using the following sections, generate a well-structured response:\n\n"
-            f"{sections_text}\n\n"
-            "Respond in JSON format with the following key:\n"
-            "- `response` (str): A well-structured response addressing the user's query."
+            f"Sections: {sections_text}\n\n"
+            f"Additional tool responses:\n{tool_responses_text}\n\n"
+            f"Ensure the response integrates the tool responses appropriately while maintaining coherence."
         )
 
-        response: InitialOutput = self.initial_output.invoke(self._get_message(prompt))
+        response = self.llm.invoke(self._get_message(prompt))
         
-        self._verbose_print(f"Generated Response: {response.response}")
+        self._verbose_print(f"Generated Response: {response.content}")
         
-        return {"generated_response": response.response}
+        return {"generated_response": response.content}
 
 
     def apply_explanation_mode(self, state: State) -> dict:
@@ -335,71 +400,24 @@ class ProxionWorkflow:
             f"Ensure that the response follows proper Markdown formatting, including correct usage of headings, lists, "
             f"code blocks (if needed), and inline formatting.\n\n"
             f"Response:\n{state['refined_response']}\n\n"
-            f"Additionally, determine whether external knowledge or real-time sources (e.g., Wikipedia, Arxiv, DuckDuckGo) "
-            f"are necessary to enhance the response. If so, indicate the need for a tool call.\n\n"
             "Respond in JSON format with the following keys:\n"
             "- `is_satisfactory` (bool): Indicates whether the response meets quality standards.\n"
             "- `feedback` (str): Provides detailed feedback on response quality and Markdown structure.\n"
-            "- `requires_tool_call` (bool): Specifies if additional external data sources are needed to enhance the response.\n"
         )
 
         evaluation: ResponseFeedback = self.evaluator.invoke(self._get_message(evaluation_prompt))
 
         self._verbose_print(
             f"Evaluation Result: {evaluation.is_satisfactory}, "
-            f"Feedback: {evaluation.feedback}, "
-            f"Requires Tool Call: {evaluation.requires_tool_call}"
+            f"Feedback: {evaluation.feedback}"
         )
 
         return {
             "is_satisfactory": evaluation.is_satisfactory,
-            "feedback": evaluation.feedback,
-            "requires_tool_call": evaluation.requires_tool_call
+            "feedback": evaluation.feedback
         }
 
 
-    def extra_knowledge(self, state: State) -> dict:
-        self._verbose_print("Fetching additional knowledge for the given query.")
-        
-        user_query = state["user_query"]
-        refined_response = state["refined_response"]
-        feedback = state["feedback"]
-        
-        retrieval_prompt = (
-            f"Given the following user query:\n\n"
-            f"{user_query}\n\n"
-            f"And the refined response:\n\n"
-            f"{refined_response}\n\n"
-            f"Along with feedback: {feedback}\n\n"
-            f"What additional knowledge or tool call suggestions would improve this response?"
-        )
-
-        response = self.knowledge_retriever.invoke(self._get_message(retrieval_prompt))
-        tools_by_name = {tool.name: tool for tool in self.tools}
-        tool_responses = {}
-
-        for tool_call in response.tool_calls:
-            tool = tools_by_name.get(tool_call["name"])
-            if not tool:
-                self._verbose_print(f"Warning: Tool '{tool_call['name']}' not found.")
-                continue
-
-            retries = 3
-            for attempt in range(1, retries + 1):
-                try:
-                    observation = tool.invoke(tool_call["args"])
-                    tool_responses[tool_call["name"]] = observation
-                    self._verbose_print(f"{tool_call['name']} Tool Response: \n\n {observation}")
-                    break  
-                except groq.BadRequestError as e:
-                    self._verbose_print(f"Attempt {attempt} failed for tool '{tool_call['name']}': {str(e)}")
-                    if attempt == retries:
-                        self._verbose_print(f"Max retries reached for tool '{tool_call['name']}'. Skipping...")
-                        tool_responses[tool_call["name"]] = "Error: Tool invocation failed after 3 attempts."
-
-        return {"tool_responses": tool_responses}
-
-        
     def refine_response(self, state: State) -> dict:
         self._verbose_print("Refining response based on feedback and tool responses.")
 
@@ -430,6 +448,7 @@ class ProxionWorkflow:
 
 
     def run(self, user_query: str, selected_mode: str = "Casual") -> str:
+        self._verbose_print(f"Running with user query: {user_query} and selected mode: {selected_mode}")
         initial_state = {"user_query": user_query, "selected_mode": selected_mode}
         final_state = self.workflow.invoke(initial_state)
         return final_state["final_response"]
@@ -447,5 +466,5 @@ llm_instance = ChatGroq(model="llama3-70b-8192")
 tool_llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
 
 proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
-answer = proxion.run("What if you are Albert Einstein then how do you answer this question 'Is multiverse there ?'", selected_mode="Casual")
+answer = proxion.run("hi", selected_mode="Casual")
 print("\n\nProxion:", answer)
