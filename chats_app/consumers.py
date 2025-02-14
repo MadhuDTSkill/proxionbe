@@ -27,10 +27,11 @@ class ChatConsumer(BaseChatAsyncJsonWebsocketConsumer):
     async def get_response(self, prompt):
         """Processes user prompt and sends response."""
         content = prompt.get('content', '')
+        mode = prompt.get('mode', 'Casual')
         if not content:
             await self.send_exception("Prompt is empty")
         await self.send_status("Thinking...")
-        response = await self.graph.ainvoke(content)
+        response = await self.graph.ainvoke(content, selected_mode=mode)
         await self.change_chat_is_new_flag_if_response_is_first_time(content, response.get('final_response', ''))
         await self.generate_bullet_points(response.get('final_response', ''))
         await self.send_llm_response(response)

@@ -75,10 +75,12 @@ class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
         await self.close()
         
     async def send_status(self, msg = ''):
+        if len(msg) > 100:
+            msg = msg[:100] + '...'
         await self.send_json({
             'type' : "status",
             "data" : {
-              'content': msg    
+              'content': msg
             }
         })
     

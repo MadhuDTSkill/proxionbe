@@ -14,7 +14,7 @@ from .memory import Memory
 
 
 class ProxionWorkflow:
-    def __init__(self, chat : Chat, user : User, consumer : object, llm : ChatGroq, tool_llm_instance : ChatGroq = None, verbose=False):
+    def __init__(self, chat : Chat, user : User, consumer : object, llm : ChatGroq, tool_llm_instance : ChatGroq = None, verbose=True):
         self.chat = chat
         self.user = user
         self.consumer = consumer
@@ -116,7 +116,7 @@ class ProxionWorkflow:
 
         result: CosmologyQueryCheck = await self.cosmology_query_check.ainvoke(await self._get_messages(query_prompt))
 
-        await self._verbose_print(f"Needs Refinement : {'Yes' if result.is_cosmology_related else 'No'}", state)
+        # await self._verbose_print(f"Needs Refinement : {'Yes' if result.is_cosmology_related else 'No'}", state)
 
         return {
             "is_cosmology_related": result.is_cosmology_related, 
@@ -143,7 +143,7 @@ class ProxionWorkflow:
         # Invoking the section generator with structured output
         result: SectionsOutput = await self.section_generator.ainvoke(query_prompt)
 
-        await self._verbose_print(f"Generated Sections: {result.sections}", state)
+        await self._verbose_print(f"Sections Generated ...", state)
 
         return {"sections": result.sections}
 
@@ -170,7 +170,7 @@ class ProxionWorkflow:
         for tool_call in response.tool_calls:
             tool = tools_by_name.get(tool_call["name"])
             if not tool:
-                self._verbose_print(f"Warning: Tool '{tool_call['name']}' not found.", state)
+                # self._verbose_print(f"Warning: Tool '{tool_call['name']}' not found.", state)
                 continue
 
             retries = 3
@@ -178,12 +178,12 @@ class ProxionWorkflow:
                 try:
                     observation = tool.ainvoke(tool_call["args"])
                     tool_responses[tool_call["name"]] = observation
-                    self._verbose_print(f"{tool_call['name']} Tool Response: \n\n {observation}", state)
+                    # self._verbose_print(f"{tool_call['name']} Tool Response: \n\n {observation}", state)
                     break  
                 except groq.BadRequestError as e:
-                    await self._verbose_print(f"Attempt {attempt} failed for tool '{tool_call['name']}': {str(e)}", state)
+                    # await self._verbose_print(f"Attempt {attempt} failed for tool '{tool_call['name']}': {str(e)}", state)
                     if attempt == retries:
-                        self._verbose_print(f"Max retries reached for tool '{tool_call['name']}'. Skipping...", state)
+                        # self._verbose_print(f"Max retries reached for tool '{tool_call['name']}'. Skipping...", state)
                         tool_responses[tool_call["name"]] = "Error: Tool invocation failed after 3 attempts."
 
         return {"tool_responses": tool_responses}
@@ -207,7 +207,7 @@ class ProxionWorkflow:
 
         response = await self.llm.ainvoke(await self._get_messages(prompt))
         
-        await self._verbose_print(f"Generated Response: {response.content}", state)
+        # await self._verbose_print(f"Generated Response: {response.content}", state)
         
         return {"generated_response": response.content}
 
@@ -244,12 +244,12 @@ class ProxionWorkflow:
         else:
             modified_response = base_response  
 
-        await self._verbose_print(f"Applied Mode ({mode}): {modified_response}", state)
+        # await self._verbose_print(f"Applied Mode ({mode}): {modified_response}", state)
         return {"refined_response": modified_response}
 
 
     async def evaluate_response(self, state: WorkFlowState) -> dict:
-        await self._verbose_print("Evaluating response for accuracy, completeness, and Markdown formatting.", state)
+        await self._verbose_print("Evaluating response ...", state)
 
         user_query = state["user_query"]
 
@@ -266,11 +266,11 @@ class ProxionWorkflow:
 
         evaluation: ResponseFeedback = await self.evaluator.ainvoke(await self._get_messages(evaluation_prompt))
 
-        self._verbose_print(
-            f"Evaluation Result: {evaluation.is_satisfactory}, "
-            f"Feedback: {evaluation.feedback}",
-            state
-        )
+        # self._verbose_print(
+        #     f"Evaluation Result: {evaluation.is_satisfactory} "
+        #     # f"Feedback: {evaluation.feedback}",
+        #     state
+        # )
 
         return {
             "is_satisfactory": evaluation.is_satisfactory,
@@ -279,7 +279,7 @@ class ProxionWorkflow:
 
 
     async def refine_response(self, state: WorkFlowState) -> dict:
-        await self._verbose_print("Refining response based on feedback and tool responses.", state)
+        await self._verbose_print("Refining response ...", state)
 
         user_query = state["user_query"]  
         tool_responses = state.get("tool_responses", {})
@@ -296,12 +296,12 @@ class ProxionWorkflow:
 
         improved = await self.llm.ainvoke(await self._get_messages(refinement_prompt))
         
-        await self._verbose_print(f"Refined Response: {improved.content}", state)
+        # await self._verbose_print(f"Refined Response: {improved.content}", state)
         return {"refined_response": improved.content}
 
     
     async def final_response(self, state: WorkFlowState) -> dict:
-        await self._verbose_print("Generating final response.", state)
+        await self._verbose_print("Generating final response...", state)
         final_response = {
             "chat": str(self.chat.id),
             "prompt": state["user_query"],
@@ -318,7 +318,7 @@ class ProxionWorkflow:
             "selected_mode": selected_mode,
             "_consumer" : self.consumer
         }
-        await self._verbose_print(f"Running with user query: {user_query} and selected mode: {selected_mode}", initial_state)
+        # await self._verbose_print(f"Running with user query: {user_query} and selected mode: {selected_mode}", initial_state)
         final_state = await self.workflow.ainvoke(initial_state)
         self.memory.add_ai_message(final_state["final_response"]["response"])
         return final_state["final_response"]
