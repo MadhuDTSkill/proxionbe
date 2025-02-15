@@ -5,6 +5,7 @@ from .models import Chat, LLMResponse, ChatNotes
 
 class ChatSerializer(serializers.ModelSerializer):
     created_at = serializers.SerializerMethodField()
+    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
 
     class Meta:
         model = Chat

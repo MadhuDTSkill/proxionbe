@@ -9,7 +9,7 @@ class Chat(UUIDPrimaryKey, TimeLine, IsActiveModel):
     is_new = models.BooleanField(default=False)
     
     class Meta:
-        ordering = ['created_at']
+        ordering = ['-created_at']
 
     def __str__(self) -> str:
         return self.name
