@@ -15,7 +15,7 @@ Choose from different response modes:
 - **Scientific Mode** 🧑‍🔬 - Get in-depth, research-backed explanations.
 - **Kids Mode** 👦 - Simplified answers for young learners.
 - **Casual Mode** ☕ - Friendly, conversational explanations.
-- **Story Mode** 📖 - Fun storytelling format to explain complex concepts.
+- **Story Mode** 📚 - Fun storytelling format to explain complex concepts.
 
 ---
 ## Installation & Setup
@@ -27,7 +27,6 @@ Ensure you have the following installed:
 - Python (>= 3.8)
 - Django (>= 4.0)
 - Node.js (for frontend integration, optional)
-- Redis (for Django Channels)
 
 ### Steps to Run
 
@@ -51,19 +50,17 @@ Ensure you have the following installed:
    pip install -r requirements.txt
    ```
 
-4. **Set Up Database & Migrations**
+4. **Install Django Channels**
+
+   ```bash
+   python -m pip install -U 'channels[daphne]'
+   ```
+
+5. **Set Up Database & Migrations**
 
    ```bash
    python manage.py migrate
    ```
-
-5. **Run Redis Server (Required for Django Channels if not working)**
-
-   ```bash
-   redis-server
-   ```
-
-   *(Ensure Redis is installed. If not, install it via ****`brew install redis`**** on macOS or ****`sudo apt install redis`**** on Linux.)*
 
 6. **Run the Django Development Server**
 
@@ -71,16 +68,10 @@ Ensure you have the following installed:
    python manage.py runserver
    ```
 
-7. **Run WebSocket Server**
-
-   ```bash
-   daphne -b 0.0.0.0 -p 8001 proxion.asgi:application
-   ```
-
 ## API Documentation
 
 You can explore API endpoints using Postman:
-[API Documentation](https://documenter.getpostman.com/view/23753014/2sA3s9Eokv)
+[API Documentation](https://documenter.getpostman.com/view/38405494/2sAYXEEJ5N)
 
 ## WebSocket Documentation
 
