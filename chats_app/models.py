@@ -28,8 +28,13 @@ class LLMResponse(UUIDPrimaryKey, TimeLine):
     chat = models.ForeignKey(Chat, on_delete=models.CASCADE, related_name='llm_responses')
     prompt = models.TextField()
     response = models.TextField()
+    is_thoughted = models.BooleanField(default=False)
+    thinked_thoughts = models.TextField(null=True, blank=True)
+    time_taken = models.FloatField(null=True, blank=True)
     tool_responses = models.JSONField(default=list,null=True, blank=True)
 
+    
+    
     class Meta:
         ordering = ['created_at']
         

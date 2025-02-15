@@ -1,6 +1,6 @@
 from helper.consumers import BaseChatAsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
-from chats_app.models import Chat, ChatNotes
+from chats_app.models import ChatNotes
 from ai import schemas
 from langchain_groq import ChatGroq
 
