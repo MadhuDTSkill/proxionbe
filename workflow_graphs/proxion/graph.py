@@ -31,21 +31,27 @@ class ProxionWorkflow:
         self.evaluator = self.llm.with_structured_output(ResponseFeedback, method="json_mode")
         self.knowledge_retriever = self.tool_llm.bind_tools(self.tools)
         
-        # graph_png = self.workflow.get_graph(xray=True).draw_mermaid_png()
-        # image_file = "ProxionWorkflow.png"
-        # with open(image_file, "wb") as file:
-        #     file.write(graph_png)
+        
+        
+        
+        
 
     async def _verbose_print(self, message: str, state : WorkFlowState):
         if self.verbose:
-            from helper.consumers import BaseChatAsyncJsonWebsocketConsumer
-            consumer : BaseChatAsyncJsonWebsocketConsumer = state['_consumer']
-            await consumer.send_status(message)
             print(f"\n\033[92m[VERBOSE] {message}\033[0m")
-            
+
+
+    async def _yield_status(self, message : str, state : WorkFlowState):
+        from helper.consumers import BaseChatAsyncJsonWebsocketConsumer
+        consumer : BaseChatAsyncJsonWebsocketConsumer = state['_consumer']
+        await consumer.send_status(message)
+
             
     async def _record_thinked_thoughts(self, thought :str, state : WorkFlowState):
+        if not thought.startswith('\n'):
+           thought  = f"\n{thought}" 
         self.thinked_thoughts += thought      
+    
     
     async def _get_history(self):
         return self.memory.messages
@@ -104,11 +110,9 @@ class ProxionWorkflow:
 
     async def validate_query(self, state: WorkFlowState) -> dict:
         await self._verbose_print("Validating user query.", state)
-
-        # AI self-thought: I need to validate this user query and check if it's relevant.
+        await self._yield_status("🔍 Validating query...", state)
         await self._record_thinked_thoughts("\nI need to validate this user query and check if it's relevant.", state)
-
-        # Constructing the structured prompt
+        
         query_prompt = (
             f"Validate if the query '{state['user_query']}' is related to cosmology or "
             f"asking about chatbot name or developer details. "
@@ -122,15 +126,13 @@ class ProxionWorkflow:
             "- `requires_tool_call` (bool): Always include this field. If the query requires external data sources (e.g., real-time space data), set this to `true`. Otherwise, set it to `false`."
         )
 
-        # AI self-thought: I have prepared the validation prompt. Now, I will send it for processing.
+        await self._yield_status("⏳ Processing query...", state)
         await self._record_thinked_thoughts("\nI have prepared the validation prompt. Now, I will send it for processing.", state)
 
         result: CosmologyQueryCheck = await self.cosmology_query_check.ainvoke(await self._get_messages(query_prompt))
 
-        # AI self-thought: I received the validation result. Now, let me analyze it.
+        await self._yield_status("✅ Validation complete", state)
         await self._record_thinked_thoughts("\nI received the validation result. Now, let me analyze it.", state)
-
-        # AI self-thought: Here’s what I found:
         await self._record_thinked_thoughts(
             "\nHere's what I found:\n"
             f"- Is this query related to cosmology? {'Yes' if result.is_cosmology_related else 'No'}\n"
@@ -153,33 +155,28 @@ class ProxionWorkflow:
 
     async def generate_sections(self, state: WorkFlowState) -> dict:
         await self._verbose_print("Generating sections for the given query.", state)
-
-        # AI self-thought: I need to break down the given topic into key sections.
+        await self._yield_status("📝 Generating sections...", state)
         await self._record_thinked_thoughts("\nI need to break down the given topic into key sections.", state)
 
-        # Constructing a structured prompt to enforce JSON format
+        
         query_prompt = (
             f"Break down the topic '{state['user_query']}' into key sections. "
             "Respond in JSON format with the following key: "
             "- `sections`: A list of section titles relevant to the topic."
         )
 
-        # AI self-thought: I have prepared the structured prompt. Now, I will send it for processing.
+        await self._yield_status("⏳ Processing query...", state)
         await self._record_thinked_thoughts("\nI have prepared the structured prompt. Now, I will send it for processing.", state)
-
-        # Invoking the section generator with structured output
+        
         result: SectionsOutput = await self.section_generator.ainvoke(query_prompt)
 
-        # AI self-thought: I have received the generated sections. Let me store them.
+        await self._yield_status("✅ Sections generated successfully!", state)
         await self._record_thinked_thoughts("\nI have received the generated sections. Let me store them.", state)
-
-        # AI self-thought: Here are the sections I generated.
         await self._record_thinked_thoughts(
             "\nHere are the sections I generated:\n"
             f"{result.sections}\n",
             state
         )
-
         await self._verbose_print("Sections Generated.", state)
 
         return {"sections": result.sections}
@@ -187,88 +184,84 @@ class ProxionWorkflow:
 
     async def extra_knowledge(self, state: WorkFlowState) -> dict:
         await self._verbose_print("Fetching additional knowledge for the given query.", state)
-
-        # AI self-thought: I need to gather extra knowledge to enhance the response.
+        await self._yield_status("🔍 Fetching additional knowledge...", state)
         await self._record_thinked_thoughts("\nI need to gather extra knowledge to enhance the response.", state)
 
         user_query = state["user_query"]
         sections = state["sections"]
         sections_text = ", ".join(sections)
 
-        # AI self-thought: I have the user query and topic breakdown. Now, I will formulate the retrieval prompt.
         await self._record_thinked_thoughts("\nI have the user query and topic breakdown. Now, I will formulate the retrieval prompt.", state)
 
         retrieval_prompt = (
             f"Given the following user query:\n\n"
             f"{user_query}\n\n"
-            f"And the Topic break down sections:\n\n"
+            f"And the Topic breakdown sections:\n\n"
             f"{sections_text}\n\n"
             f"What additional knowledge or tool call suggestions would improve this response?"
         )
 
-        # AI self-thought: The retrieval prompt is ready. I will now send it for processing.
+        await self._yield_status("🔍 Retrieving additional knowledge...", state)
         await self._record_thinked_thoughts("\nThe retrieval prompt is ready. I will now send it for processing.", state)
 
         response = self.knowledge_retriever.ainvoke(await self._get_messages(retrieval_prompt))
         tools_by_name = {tool.name: tool for tool in self.tools}
         tool_responses = {}
 
-        # AI self-thought: I have received tool call suggestions. Now, I will process each one.
         await self._record_thinked_thoughts("\nI have received tool call suggestions. Now, I will process each one.", state)
+        await self._yield_status("🛠️ Processing tool call suggestions...", state)
 
         for tool_call in response.tool_calls:
             tool = tools_by_name.get(tool_call["name"])
             if not tool:
-                # AI self-thought: The requested tool does not exist. I will skip this call.
                 await self._record_thinked_thoughts(f"\nThe requested tool '{tool_call['name']}' does not exist. Skipping this call.", state)
                 continue
 
             retries = 3
             for attempt in range(1, retries + 1):
                 try:
-                    # AI self-thought: Attempting to invoke the tool '{tool_call['name']}' (Attempt {attempt}/{retries}).
                     await self._record_thinked_thoughts(f"\nAttempting to invoke the tool '{tool_call['name']}' (Attempt {attempt}/{retries}).", state)
 
-                    observation = tool.ainvoke(tool_call["args"])
+                    observation = await tool.ainvoke(tool_call["args"])  
                     tool_responses[tool_call["name"]] = observation
 
-                    # AI self-thought: Successfully received response from '{tool_call['name']}'. Response: {observation}
                     await self._record_thinked_thoughts(f"\nSuccessfully received response from '{tool_call['name']}'. \nResponse: {observation}", state)
                     break  
 
-                except groq.BadRequestError as e:
-                    # AI self-thought: Tool invocation failed. Retrying if attempts remain.
+                except groq.BadRequestError:
                     await self._record_thinked_thoughts(f"\nTool '{tool_call['name']}' invocation failed on attempt {attempt}. Retrying...", state)
 
                     if attempt == retries:
-                        error_message = f"Error: Tool invocation failed after 3 attempts."
+                        error_message = f"Error: Tool invocation failed after {retries} attempts."
                         tool_responses[tool_call["name"]] = error_message
 
-                        # AI self-thought: Maximum retries reached for '{tool_call['name']}'. Storing failure response.
                         await self._record_thinked_thoughts(f"\nMaximum retries reached for '{tool_call['name']}'. Storing failure response: {error_message}", state)
 
-        # AI self-thought: Tool responses have been processed. Returning final results.
+        await self._yield_status("📚 Extra knowledge retrieval complete!", state)
         await self._record_thinked_thoughts("\nTool responses have been processed. Returning final results.", state)
 
         return {"tool_responses": tool_responses}
 
-
+    
     async def multi_step_thinking(self, state: WorkFlowState) -> dict:
         await self._verbose_print("Generating response using structured sections.", state)
-
-        # AI self-thought: I need to generate a structured response using the provided sections.
+        await self._yield_status("📝 Generating structured response...", state)
         await self._record_thinked_thoughts("\nI need to generate a structured response using the provided sections.", state)
 
         user_query = state["user_query"]
-        sections_text = ", ".join(state["sections"])
+        sections = state.get("sections", [])
+        sections_text = ", ".join(sections) if sections else "No specific sections provided."
 
-        # AI self-thought: I have the user query and the topic breakdown. Now, I will check for additional tool responses.
+        await self._yield_status("🔍 Checking tool responses...", state)
         await self._record_thinked_thoughts("\nI have the user query and the topic breakdown. Now, I will check for additional tool responses.", state)
 
-        tool_responses = state.get("tool_responses", {})        
-        tool_responses_text = "\n".join([f"{tool}: {response}" for tool, response in tool_responses.items()]) or "No additional tool responses available."
+        tool_responses = state.get("tool_responses", {})
+        if tool_responses:
+            tool_responses_text = "\n".join(f"{tool}: {response}" for tool, response in tool_responses.items())
+        else:
+            tool_responses_text = "No additional tool responses available."
 
-        # AI self-thought: I have gathered the tool responses. Now, I will construct the final structured prompt.
+        await self._yield_status("🏗️ Constructing final structured prompt...", state)
         await self._record_thinked_thoughts("\nI have gathered the tool responses. Now, I will construct the final structured prompt.", state)
 
         prompt = (
@@ -279,25 +272,30 @@ class ProxionWorkflow:
             f"Ensure the response integrates the tool responses appropriately while maintaining coherence."
         )
 
-        # AI self-thought: The final prompt is ready. Now, I will generate a response.
+        await self._yield_status("🤖 Generating response with LLM...", state)
         await self._record_thinked_thoughts("\nThe final prompt is ready. Now, I will generate a response.", state)
 
-        response = await self.llm.ainvoke(await self._get_messages(prompt))
+        try:
+            response = await self.llm.ainvoke(await self._get_messages(prompt))
+            generated_response = response.content
+        except Exception as e:
+            generated_response = f"Error: Unable to generate a response due to {str(e)}."
+            await self._record_thinked_thoughts(f"\nLLM invocation failed: {str(e)}", state)
 
-        # AI self-thought: Response generation completed. Now, I will store the generated response.
-        await self._record_thinked_thoughts(f"\nResponse generation completed. Generated Response:\n\n{response.content}", state)
+        await self._yield_status("✅ Response generation completed.", state)
+        await self._record_thinked_thoughts(f"\nResponse generation completed. Generated Response:\n\n{generated_response}", state)
 
-        return {"generated_response": response.content}
+        return {"generated_response": generated_response}
 
 
     async def apply_explanation_mode(self, state: WorkFlowState) -> dict:
-        base_response = state["generated_response"]
-        user_query = state["user_query"]  
+        base_response = state.get("generated_response", "No response available.")
+        user_query = state.get("user_query", "No query provided.")
         mode = state.get("selected_mode", "Casual")
-
-        # AI self-thought: I need to modify the response based on the selected explanation mode.
-        await self._record_thinked_thoughts(f"\nI need to modify the response based on the selected mode: {mode}.", state)
         
+        await self._yield_status(f"📝 Applying explanation mode: {mode}...", state)
+        await self._record_thinked_thoughts(f"\nI need to modify the response based on the selected mode: {mode}.", state)
+
         explanation_prompts = {
             "Scientific": (
                 f"User Query: {user_query}\n\n"
@@ -318,31 +316,34 @@ class ProxionWorkflow:
         }
 
         if mode in explanation_prompts:
-            # AI self-thought: I have identified the explanation mode. Now, I will re-invoke the model.
-            await self._record_thinked_thoughts(f"\nI have identified the explanation mode ({mode}). Now, I will re-invoke the model.", state)
             
-            self._verbose_print(f"Re-invoking model for {mode} mode.", state)
-            response = await self.llm.ainvoke(await self._get_messages(explanation_prompts[mode]))
-            modified_response = response.content
+            await self._yield_status(f"💡 Generating {mode}-mode response...", state)
+            await self._record_thinked_thoughts(f"\nI have identified the explanation mode ({mode}). Now, I will re-invoke the model.", state)
+            await self._verbose_print(f"Re-invoking model for {mode} mode.", state)
 
-            # AI self-thought: Mode applied successfully. Response has been transformed.
-            await self._record_thinked_thoughts(f"\nMode ({mode}) applied successfully. Transformed Response:\n\n{modified_response}", state)
+            try:
+                response = await self.llm.ainvoke(await self._get_messages(explanation_prompts[mode]))
+                modified_response = response.content
+                await self._yield_status(f"✅ {mode} transformation completed.", state)
+                await self._record_thinked_thoughts(f"\nMode ({mode}) applied successfully. Transformed Response:\n\n{modified_response}", state)
+            except Exception as e:
+                modified_response = f"Error: Unable to apply {mode} mode due to {str(e)}."
+                await self._record_thinked_thoughts(f"\nError applying {mode} mode: {str(e)}", state)
+                await self._yield_status(f"❌ Failed to apply {mode} mode.", state)
         else:
             modified_response = base_response  
-
-            # AI self-thought: The selected mode is invalid. Keeping the original response.
             await self._record_thinked_thoughts(f"\nThe selected mode ({mode}) is invalid. Keeping the original response.", state)
+            await self._yield_status(f"⚠️ Invalid mode ({mode}). Keeping original response.", state)
 
         return {"refined_response": modified_response}
 
 
     async def evaluate_response(self, state: WorkFlowState) -> dict:
-        await self._verbose_print("Evaluating response ...", state)
+        await self._yield_status("🔍 Evaluating response...", state)
 
-        user_query = state["user_query"]
-        refined_response = state["refined_response"]
+        user_query = state.get("user_query", "No query provided.")
+        refined_response = state.get("refined_response", "No response available.")
 
-        # AI self-thought: I need to evaluate the response for accuracy, completeness, and Markdown formatting.
         await self._record_thinked_thoughts("\nI need to evaluate the response for accuracy, completeness, and Markdown formatting.", state)
 
         evaluation_prompt = (
@@ -359,12 +360,16 @@ class ProxionWorkflow:
         )
 
         try:
-            evaluation: ResponseFeedback = await self.evaluator.ainvoke(await self._get_messages(evaluation_prompt))
+            
+            await self._yield_status("🚀 Sending response for evaluation...", state)
 
-            # AI self-thought: Evaluation completed. Checking if the response meets quality standards.
+            evaluation = await self.evaluator.ainvoke(await self._get_messages(evaluation_prompt))
+            
+            if not hasattr(evaluation, "is_satisfactory") or not hasattr(evaluation, "feedback"):
+                raise ValueError("Invalid response format from evaluator.")
+
             await self._record_thinked_thoughts(f"\nEvaluation completed. Quality check result: {evaluation.is_satisfactory}", state)
-
-            # Structured logging of feedback
+            await self._yield_status("✅ Evaluation completed!", state)
             await self._verbose_print(f"Evaluation Result: {evaluation.is_satisfactory}\nFeedback:\n{evaluation.feedback}", state)
 
             return {
@@ -373,27 +378,27 @@ class ProxionWorkflow:
             }
         
         except Exception as e:
-            # AI self-thought: Evaluation failed due to an error. Returning default feedback.
-            await self._record_thinked_thoughts(f"\nEvaluation failed: {str(e)}. Returning default feedback.", state)
+            error_message = f"Error during evaluation: {str(e)}"
+            
+            await self._record_thinked_thoughts(f"\nEvaluation failed: {error_message}", state)
+            await self._yield_status("❌ Evaluation failed. Check logs for details.", state)
 
             return {
                 "is_satisfactory": False,
-                "feedback": "Error during evaluation. Could not assess response quality."
+                "feedback": error_message
             }
 
 
     async def refine_response(self, state: WorkFlowState) -> dict:
-        await self._verbose_print("Refining response ...", state)
+        await self._yield_status("🔄 Refining response...", state)
 
-        user_query = state["user_query"]
-        initial_response = state["refined_response"]
-        feedback = state["feedback"]
+        user_query = state.get("user_query", "No query provided.")
+        initial_response = state.get("refined_response", "No response available.")
+        feedback = state.get("feedback", "No feedback provided.")
         tool_responses = state.get("tool_responses", {})
 
-        # AI self-thought: I need to refine the response based on feedback and tool responses.
         await self._record_thinked_thoughts("\nI need to refine the response based on feedback and tool responses.", state)
-
-        # Handling tool responses gracefully
+        
         if tool_responses:
             tool_responses_text = "\n".join([f"{tool}: {response}" for tool, response in tool_responses.items()])
         else:
@@ -412,22 +417,31 @@ class ProxionWorkflow:
         )
 
         try:
-            improved_response = await self.llm.ainvoke(await self._get_messages(refinement_prompt))
+            
+            await self._yield_status("🚀 Sending refinement request...", state)
 
-            # AI self-thought: Refinement completed. Evaluating improvements.
+            improved_response = await self.llm.ainvoke(await self._get_messages(refinement_prompt))
+            
+            if not hasattr(improved_response, "content") or not improved_response.content.strip():
+                raise ValueError("Invalid or empty response from LLM.")
+            
             await self._record_thinked_thoughts("\nRefinement completed. Evaluating improvements.", state)
+            await self._yield_status("✅ Refinement completed!", state)
 
             return {"refined_response": improved_response.content}
 
         except Exception as e:
-            # AI self-thought: Refinement failed. Returning the previous response.
-            await self._record_thinked_thoughts(f"\nRefinement failed: {str(e)}. Retaining the previous response.", state)
+            error_message = f"Refinement failed: {str(e)}. Retaining the previous response."
+
+            await self._record_thinked_thoughts(f"\n{error_message}", state)
+            await self._yield_status("❌ Refinement failed. Using the initial response.", state)
 
             return {"refined_response": initial_response}
 
 
     async def final_response(self, state: WorkFlowState) -> dict:
         await self._verbose_print("Generating final response...", state)
+        await self._yield_status("✅ Generating final response...", state)
         
         final_response = {
             "chat": str(self.chat.id),
@@ -449,7 +463,8 @@ class ProxionWorkflow:
         }
         start_time = time.time()
 
-        # await self._verbose_print(f"Running with user query: {user_query} and selected mode: {selected_mode}", initial_state)
+        await self._verbose_print(f"Running with user query: {user_query} and selected mode: {selected_mode}", initial_state)
+        self.thinked_thoughts = str()
         final_state = await self.workflow.ainvoke(initial_state)
 
         end_time = time.time()
