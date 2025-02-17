@@ -1,13 +1,11 @@
 import asyncio
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
-from langchain_core.messages import trim_messages, AIMessage, HumanMessage
 from uuid import uuid4  
 from channels.db import database_sync_to_async
 from chats_app import models, serializers
-from config import context_encrypt_storage
 from langchain_groq import ChatGroq
-# from ai.graphs import graphs
 from workflow_graphs.proxion.graph import ProxionWorkflow
+from workflow_graphs.proxion_2.graph import ProxionThinkWorkflow
 
 
 class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
@@ -44,7 +42,8 @@ class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
         try :
             llm_instance = ChatGroq(model="llama3-70b-8192")
             tool_llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")            
-            self.graph = await ProxionWorkflow.init_graph(
+            # self.graph = await ProxionWorkflow.init_graph(
+            self.graph = await ProxionThinkWorkflow.init_graph(
                 chat = self.chat,
                 user = self.user,
                 consumer = self,

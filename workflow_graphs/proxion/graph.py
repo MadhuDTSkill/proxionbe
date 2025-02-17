@@ -473,9 +473,20 @@ class ProxionWorkflow:
         self.memory.add_ai_message(final_state["final_response"]["response"])
         return final_state["final_response"]
     
+    
+    async def get_flow_image(self):
+        graph_png = self.workflow.get_graph(xray=True).draw_mermaid_png()
+        image_file = "ProxionWorkflow.png"
+        with open(image_file, "wb") as file:
+            file.write(graph_png)
+            
+        print(f"Graph saved as {image_file}")
+        
+        
     @classmethod
     async def init_graph(cls, *args, **kwargs):
         graph = cls(*args, **kwargs)
         graph.workflow = await graph._build_workflow()
+        await graph.get_flow_image()
         return graph
         
