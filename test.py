@@ -113,16 +113,13 @@ def calculator_tool(expression: Annotated[str, "A string containing a mathematic
 class State(TypedDict):
     is_cosmology_related: bool
     user_query: str
-    sections: List[str]
-    expansion_sections : List[str]
-    selected_mode: Literal["Casual", "Scientific", "Story", "Kids"]
+    new_discussion: str
+    is_discussion_done : str
+    discussions : str
     generated_response: str
-    tool_responses : Dict[str, str]
     refined_response: str
     final_response: str
-    is_satisfactory: bool
     requires_tool_call : bool
-    feedback: str
 
 
 class SectionsOutput(BaseModel):
@@ -156,10 +153,14 @@ class CosmologyQueryCheck(BaseModel):
     )
   
 
-class ResponseFeedback(BaseModel):
-    is_satisfactory: bool = Field(description="Indicates if the response is scientifically accurate and complete.")
-    feedback: str = Field(description="Feedback on how to improve the answer if needed.")
-
+class ResponseDiscussion(BaseModel): 
+    """
+    Represents the discussion response state, tracking the ongoing conversation and determining if further discussion is needed.
+    """
+    new_discussion: str = Field(..., description="The latest generated discussion text in response to the ongoing conversation.")
+    is_discussion_done: bool = Field(..., description="Indicates whether the discussion has reached a satisfactory conclusion.")
+    
+    
 
 class ProxionWorkflow:
     def __init__(self, llm : ChatGroq, tool_llm_instance : ChatGroq, verbose=False):
@@ -168,9 +169,7 @@ class ProxionWorkflow:
         self.verbose = verbose
         self.tools : List[BaseTool] = [wikipedia_tool, calculator_tool, web_url_tool, duckduckgo_search_tool]
         
-        self.cosmology_query_check = self.llm.with_structured_output(CosmologyQueryCheck, method="json_mode")
-        self.section_generator = self.llm.with_structured_output(SectionsOutput, method="json_mode")
-        self.evaluator = self.llm.with_structured_output(ResponseFeedback, method="json_mode")
+        self.discussion_llm = self.llm.with_structured_output(ResponseDiscussion, method="json_mode")
         self.knowledge_retriever = self.tool_llm.bind_tools(self.tools)
         self.workflow = self._build_workflow()
 
@@ -179,7 +178,7 @@ class ProxionWorkflow:
         with open(image_file, "wb") as file:
             file.write(graph_png)
 
-    def _verbose_print(self, message: str):
+    def _verbose_print(self, message: str, state = None):
         if self.verbose:
             print(f"\n\033[92m[VERBOSE] {message}\033[0m")
             
@@ -205,253 +204,114 @@ class ProxionWorkflow:
     def _build_workflow(self):
         builder = StateGraph(State)
         
+        builder.add_node('Proxion', self.proxion_node)
+        builder.add_node('Proxion Soul', self.proxion_soul_node)
+
+        builder.add_edge(START, 'Proxion')
         
-        builder.add_node("Query Validation", self.validate_query)
-        builder.add_node("Generate Relevant Sections", self.generate_sections)
-        builder.add_node("Generate Extra Knowledge", self.extra_knowledge)
-        builder.add_node("Generate Initial Response", self.multi_step_thinking)
-        builder.add_node("Apply Explanation Mode", self.apply_explanation_mode)
-        builder.add_node("Evaluate Response Quality", self.evaluate_response)
-        builder.add_node("Refine Response", self.refine_response)
-        builder.add_node("Finalize and Provide Response", self.final_response)
-
-        builder.add_edge(START, "Query Validation")
-        builder.add_edge("Generate Extra Knowledge", "Generate Initial Response")
-        builder.add_edge("Generate Initial Response", "Apply Explanation Mode")
-        builder.add_edge("Apply Explanation Mode", "Evaluate Response Quality")
-        builder.add_edge("Refine Response", "Evaluate Response Quality")
-        builder.add_edge("Finalize and Provide Response", END)
-
         builder.add_conditional_edges(
-            "Query Validation",
-            lambda state: "Unreleted To Cosmology" if not state["is_cosmology_related"] else "Releted To Cosmology",
-            {"Unreleted To Cosmology": END, "Releted To Cosmology": "Generate Relevant Sections"}
+            'Proxion',
+            lambda state: "Dicussion Is Done" if state['is_discussion_done'] else "Need More Discussion",
+            {
+                "Need More Discussion" :  'Proxion Soul',
+                "Dicussion Is Done" : END
+            }
         )
         
         builder.add_conditional_edges(
-            "Generate Relevant Sections",
-            lambda state: "No Extra Knowledge is needed" if not state["requires_tool_call"] else "Extra Knowledge is needed",
-            {"No Extra Knowledge is needed": "Generate Initial Response", "Extra Knowledge is needed": "Generate Extra Knowledge"}
+            'Proxion Soul',
+            lambda state: "Dicussion Is Done" if state['is_discussion_done'] else "Need More Discussion",
+            {
+                "Need More Discussion" :  'Proxion',
+                "Dicussion Is Done" : END
+            }
         )
-        
-        builder.add_conditional_edges(
-            "Evaluate Response Quality",
-            lambda state: "Needs Refinement" if not state["is_satisfactory"]  else "Response is Final",
-            {"Needs Refinement": "Refine Response", "Response is Final": "Finalize and Provide Response"}
-        )
-
+    
         return builder.compile()
 
 
-    def validate_query(self, state: State) -> dict:
-        self._verbose_print("Validating user query.")
+    def proxion_node(self, state: State) -> dict:
+        # self._verbose_print("Proxion Node: Generating discussion response.", state)
 
-        # Constructing the structured prompt to enforce JSON format
-        query_prompt = (
-            f"Validate if the query '{state['user_query']}' is related to cosmology or "
-            f"asking about chatbot name or developer details. "
-            "Respond in JSON format with the following keys:\n"
-            "- `is_cosmology_related` (bool): Indicates whether the query is valid.\n"
-            "- `response` (str): If the query is not related to cosmology:\n"
-            "  - For greetings (e.g., 'Hi', 'Hello'), respond warmly (e.g., 'Hi! How can I assist you today? 😊').\n"
-            "  - For farewells (e.g., 'Goodbye', 'See you'), respond appropriately (e.g., 'Goodbye! Have a great day!').\n"
-            "  - For chatbot-related queries (e.g., 'Who are you?'), provide relevant details (e.g., 'I am Proxion, an AI assistant created by Madhu Bagamma Gari, specializing in cosmology and space sciences.').\n"
-            "  - For completely unrelated questions (e.g., 'Who is Modi?'), politely inform the user that Proxion only focuses on cosmology (e.g., 'I focus only on cosmology-related topics. Let’s talk about the wonders of the universe!').\n"
-            "- `requires_tool_call` (bool): Always include this field. If the query requires external data sources (e.g., real-time space data), set this to `true`. Otherwise, set it to `false`."
+        execution_prompt = (
+            f"User Query: {state['user_query']}\n"
+            f"Discussion so far: {state['discussions']}\n"
+            "Respond in the following JSON format:\n"
+            "- `new_discussion` (str): Your contribution to the conversation, continuing from the previous discussion while adding or refining points.\n"
+            "- `is_discussion_done` (bool): Set to True if the discussion feels complete, otherwise False.\n"
+            "Respond with a direct continuation of the conversation. Do not acknowledge the previous response, just continue by:\n"
+            "- Evaluating the last point discussed.\n"
+            "- Asking relevant doubts or making necessary corrections.\n"
+            "- Ensuring the discussion progresses toward resolving the user's query.\n"
+            "Do not praise or acknowledge the other node's response. Be focused on solving the query.\n"
+            "Once you think the discussion is complete, set `is_discussion_done` to True."
         )
 
-        result: CosmologyQueryCheck = self.cosmology_query_check.invoke(query_prompt)
+        response : ResponseDiscussion = self.discussion_llm.invoke(self._get_messages(execution_prompt))
 
-        self._verbose_print(f"Needs Refinement : {'Yes' if result.is_cosmology_related else 'No'}")
+        self._verbose_print(f"{response.new_discussion}", state)
+        self._verbose_print(f"Need More Discussion {not response.is_discussion_done}", state)
 
         return {
-            "is_cosmology_related": result.is_cosmology_related, 
-            "final_response": result.response, 
-            "requires_tool_call": result.requires_tool_call
+            "discussions": state["discussions"] + "\n" + response.new_discussion,
+            "is_discussion_done": response.is_discussion_done
         }
 
 
-    def generate_sections(self, state: State) -> dict:
-        self._verbose_print("Generating sections for the given query.")
+            
 
-        # Constructing a structured prompt to enforce JSON format
-        query_prompt = (
-            f"Break down the topic '{state['user_query']}' into key sections. "
-            "Respond in JSON format with the following key: "
-            "- `sections`: A list of section titles relevant to the topic."
+    def proxion_soul_node(self, state: State) -> dict:
+        # self._verbose_print("Proxion Soul Node: Continuing the discussion.", state)
+
+        execution_prompt = (
+            f"User Query: {state['user_query']}\n"
+            f"Past Discussion: {state['discussions']}\n"
+            "Respond in the following JSON format:\n"
+            "- `new_discussion` (str): Your contribution to the conversation, continuing from the previous discussion while adding or refining points.\n"
+            "- `is_discussion_done` (bool): Set to True if the discussion feels complete, otherwise False.\n"
+            "Continue the conversation directly, without acknowledging or respecting the other node. Focus on:\n"
+            "- Evaluating the last statement and adding necessary information.\n"
+            "- Correcting any inaccuracies.\n"
+            "- Asking further questions to keep the discussion progressing.\n"
+            "Keep the response relevant to the user's query and ensure it adds new insights. Do not repeat the same content.\n"
+            "Set `is_discussion_done` to True only if the discussion is concluded."
         )
 
-        # Invoking the section generator with structured output
-        result: SectionsOutput = self.section_generator.invoke(query_prompt)
-
-        self._verbose_print(f"Generated Sections: {result.sections}")
-
-        return {"sections": result.sections}
-
-
-    def extra_knowledge(self, state: State) -> dict:
-        self._verbose_print("Fetching additional knowledge for the given query.")
+        response : ResponseDiscussion = self.discussion_llm.invoke(self._get_messages(execution_prompt))
         
-        user_query = state["user_query"]
-        sections = state["sections"]
-        sections_text = ", ".join(sections)
-        
-        retrieval_prompt = (
-            f"Given the following user query:\n\n"
-            f"{user_query}\n\n"
-            f"And the Topic break down sections:\n\n"
-            f"{sections_text}\n\n"
-            f"What additional knowledge or tool call suggestions would improve this response?"
-        )
-
-        response = self.knowledge_retriever.invoke(self._get_messages(retrieval_prompt))
-        tools_by_name = {tool.name: tool for tool in self.tools}
-        tool_responses = {}
-
-        for tool_call in response.tool_calls:
-            tool = tools_by_name.get(tool_call["name"])
-            if not tool:
-                self._verbose_print(f"Warning: Tool '{tool_call['name']}' not found.")
-                continue
-
-            retries = 3
-            for attempt in range(1, retries + 1):
-                try:
-                    observation = tool.invoke(tool_call["args"])
-                    tool_responses[tool_call["name"]] = observation
-                    self._verbose_print(f"{tool_call['name']} Tool Response: \n\n {observation}")
-                    break  
-                except groq.BadRequestError as e:
-                    self._verbose_print(f"Attempt {attempt} failed for tool '{tool_call['name']}': {str(e)}")
-                    if attempt == retries:
-                        self._verbose_print(f"Max retries reached for tool '{tool_call['name']}'. Skipping...")
-                        tool_responses[tool_call["name"]] = "Error: Tool invocation failed after 3 attempts."
-
-        return {"tool_responses": tool_responses}
-
-
-    def multi_step_thinking(self, state: State) -> dict:
-        self._verbose_print("Generating response using structured sections.")
-        
-        user_query = state["user_query"]
-        sections_text = ", ".join(state["sections"])
-        tool_responses = state.get("tool_responses", {})        
-        tool_responses_text = "\n".join([f"{tool}: {response}" for tool, response in tool_responses.items()]) or "No additional tool responses available."
-
-        prompt = (
-            f"User Query: {user_query}\n\n"
-            f"Using the following sections, generate a well-structured response:\n\n"
-            f"Sections: {sections_text}\n\n"
-            f"Additional tool responses:\n{tool_responses_text}\n\n"
-            f"Ensure the response integrates the tool responses appropriately while maintaining coherence."
-        )
-
-        response = self.llm.invoke(self._get_messages(prompt))
-        
-        self._verbose_print(f"Generated Response: {response.content}")
-        
-        return {"generated_response": response.content}
-
-
-    def apply_explanation_mode(self, state: State) -> dict:
-        base_response = state["generated_response"]
-        user_query = state["user_query"]  
-        mode = state.get("selected_mode", "Casual")
-        
-        
-        explanation_prompts = {
-            "Scientific": (
-                f"User Query: {user_query}\n\n"
-                f"Provide a technical and detailed explanation of the following response with precise terminology and a formal tone:\n\n{base_response}"
-            ),
-            "Story": (
-                f"User Query: {user_query}\n\n"
-                f"Transform the following response into an engaging and imaginative story format:\n\n{base_response}"
-            ),
-            "Casual": (
-                f"User Query: {user_query}\n\n"
-                f"Rephrase the following response in a friendly, easy-to-understand manner suitable for everyday conversation:\n\n{base_response}"
-            ),
-            "Kids": (
-                f"User Query: {user_query}\n\n"
-                f"Explain the following response in a very simple and fun way so that a child can understand. Use short sentences and easy words with emojies:\n\n{base_response}"
-            ),
-        }
-        
-        if mode in explanation_prompts:
-            self._verbose_print(f"Re-invoking model for {mode} mode.")
-            modified_response = self.llm.invoke(self._get_messages(explanation_prompts[mode]))
-            modified_response = modified_response.content
-        else:
-            modified_response = base_response  
-
-        self._verbose_print(f"Applied Mode ({mode}): {modified_response}")
-        return {"refined_response": modified_response}
-
-
-    def evaluate_response(self, state: State) -> dict:
-        self._verbose_print("Evaluating response for accuracy, completeness, and Markdown formatting.")
-
-        user_query = state["user_query"]
-
-        evaluation_prompt = (
-            f"User Query: {user_query}\n\n"
-            f"Evaluate the following response for accuracy, completeness, and relevance to the user query. "
-            f"Ensure that the response follows proper Markdown formatting, including correct usage of headings, lists, "
-            f"code blocks (if needed), and inline formatting.\n\n"
-            f"Response:\n{state['refined_response']}\n\n"
-            "Respond in JSON format with the following keys:\n"
-            "- `is_satisfactory` (bool): Indicates whether the response meets quality standards.\n"
-            "- `feedback` (str): Provides detailed feedback on response quality and Markdown structure.\n"
-        )
-
-        evaluation: ResponseFeedback = self.evaluator.invoke(self._get_messages(evaluation_prompt))
-
-        self._verbose_print(
-            f"Evaluation Result: {evaluation.is_satisfactory}, "
-            f"Feedback: {evaluation.feedback}"
-        )
+        self._verbose_print(f"{response.new_discussion}", state)
+        self._verbose_print(f"Need More Discussion {not response.is_discussion_done}", state)
 
         return {
-            "is_satisfactory": evaluation.is_satisfactory,
-            "feedback": evaluation.feedback
+            "discussions": state["discussions"] + "\n" + response.new_discussion,
+            "is_discussion_done": response.is_discussion_done
         }
 
 
-    def refine_response(self, state: State) -> dict:
-        self._verbose_print("Refining response based on feedback and tool responses.")
+    # def proxion(self, state : State):
+    #     self._verbose_print(f"Proxion called with state: {state}")
+    #     user_query = state["user_query"]
+    #     discussions = state["discussions"]
 
-        user_query = state["user_query"]  
-        tool_responses = state.get("tool_responses", {})
+    #     execution_prompt = f"""
+    #     User Query: {user_query}
+
+    #     Discussions with your soul: {discussions}    
+
+    #     Engage in a deep and thoughtful discussion about the topic. Each response should alternate between two perspectives, one representing curiosity and questioning, and the other providing insights and reflections. Do not include explicit labels or headings for the perspectives.
+    #     """
+
         
-        tool_responses_text = "\n".join([f"{tool}: {response}" for tool, response in tool_responses.items()]) or "No additional tool responses available."
-
-        refinement_prompt = (
-            f"User Query:\n{user_query}\n\n"
-            f"Initial Response:\n{state['refined_response']}\n\n"
-            f"Feedback:\n{state['feedback']}\n\n"
-            f"Tool Responses:\n{tool_responses_text}\n\n"
-            f"Refine the response based on the feedback and tool responses while ensuring it remains accurate, well-structured, and relevant to the user query."
-        )
-
-        improved = self.llm.invoke(self._get_messages(refinement_prompt))
-        
-        self._verbose_print(f"Refined Response: {improved.content}")
-        return {"refined_response": improved.content}
-
-    
-    def final_response(self, state: State) -> dict:
-        self._verbose_print("Generating final response.")
-
-        refined_response = state["refined_response"]
-        return {"final_response": refined_response}
-
+    #     response = self.llm.invoke(self._get_messages(execution_prompt))
+    #     self._verbose_print(f"Response: {response.content}")
+    #     return {'discussions': discussions}
+ 
 
     def run(self, user_query: str, selected_mode: str = "Casual") -> str:
         self._verbose_print(f"Running with user query: {user_query} and selected mode: {selected_mode}")
-        initial_state = {"user_query": user_query, "selected_mode": selected_mode}
+        initial_state = {"user_query": user_query, "selected_mode": selected_mode, 'discussions' : ''}
         final_state = self.workflow.invoke(initial_state)
-        return final_state["final_response"]
+        return final_state["discussions"]
 
 # -------------------------------
 # Example Usage
@@ -465,6 +325,51 @@ llm_instance = ChatGroq(model="llama3-70b-8192")
 
 tool_llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
 
-proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
-answer = proxion.run("Hi ?", selected_mode="Kids")
-print("\n\nProxion:", answer)
+# proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
+# answer = proxion.run("What is the black hole ?", selected_mode="Kids")
+# print("\n\nProxion:", answer)
+
+
+SYSTEM_PROMPT_2 = """
+    User Query: "What is the waymilky ?"
+
+    Your task is to simulate an internal dialogue where you deeply analyze and discuss the topic before generating the final response. You are required to:
+
+    - Identify the main concept or question the user is asking about. 
+    - Break down the key terms and think about what is being asked. 
+    - Is there ambiguity or missing context? Consider these points.
+
+    - Recall everything you know about the concept.
+    - Ask yourself foundational questions about the concept and how it connects to related ideas.
+    - Analyze why certain things happen or how specific phenomena work (e.g., "Why is gravity so strong in black holes?" or "How do we define a 'flap' in this context?").
+    - Think about the deeper principles involved (e.g., "What scientific theories explain this?", "What experiments or observations support this?", "What are the paradoxes or unanswered questions?").
+    - Consider possible misconceptions or common confusions the user might have, and address them in your internal discussion.
+    
+    - Identify the key points that need to be explained. These should be clear, logical steps that build the understanding progressively.
+    - Reflect on related terms, historical context, or scientific research that will enhance the explanation.
+    - Ask yourself questions like: What are the fundamental aspects of this concept? What is commonly misunderstood? What additional context might the user need to fully grasp this?
+    
+    - Start discussing the topic internally, asking yourself key questions and considering possible answers. Think aloud, as if trying to figure this out in real-time.
+    - For example, if the user asked about a "black hole," you might begin with: "Okay, let’s figure out what a black hole really is. I remember something about gravity being super strong, but why is that? How does mass and density play into this? Oh, and isn’t there something about spacetime bending around it?"
+    - Reflect on how various pieces of information might interconnect, and allow yourself to explore ideas in depth.
+    - Throughout this process, build upon each thought. Each insight should lead to the next logical question or clarification.
+
+    - After your internal thought process, synthesize everything you’ve discussed.
+    - Write a response that reflects the complexity of your internal analysis, ensuring clarity for the user. 
+    - Use humor and analogies where needed, but maintain a formal tone that conveys the weight of the subject matter.
+    - Organize the response logically, starting from foundational explanations and gradually progressing to more complex ideas.
+    - Ensure the final response feels natural, as though it’s part of the ongoing internal dialogue you’ve just had.
+
+    - Avoid unnecessary prefixes or introductions like "Let's dive into the internal dialogue..." and instead jump straight into the internal discussion.
+    - If any term or concept lacks sufficient context, acknowledge it by stating something like "I’m not sure about this term. We might need some extra information on this." Then, proceed with the next part of the discussion, allowing the necessary information to be gathered in the next step via tool calls.
+
+    Remember, the process should resemble an internal "brainstorming" session, but it should be detailed and structured enough to inform the final response. Think of it as answering your own questions before explaining it to the user. The key is not to rush into a final answer without this thorough analysis.
+
+    For example, if the user asked about "black holes," you might internally ask:
+    - "Okay, so I need to figure out (Not exaclty like this. You can decide.)/ Okay, let's see. The user wants to know (Not exaclty like this. You can decide.)/ Okay, the user just asked black holes. Let me start by recalling what I know."
+    - I remember from school that black holes are something in space where gravity is so strong that not even light can escape. But why is that? How does that happen?.
+    - .. and so on...
+"""
+
+response = llm_instance.invoke(SYSTEM_PROMPT_2)
+print(response.content)
