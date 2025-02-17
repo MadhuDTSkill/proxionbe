@@ -98,11 +98,7 @@ class ProxionThinkWorkflow:
             f"asking about chatbot name or developer details. "
             "Respond in JSON format with the following keys:\n"
             "- `is_cosmology_related` (bool): Indicates whether the query is valid.\n"
-            "- `response` (str): If the query is not related to cosmology:\n"
-            "  - For greetings (e.g., 'Hi', 'Hello'), respond warmly (e.g., 'Hi! How can I assist you today? 😊').\n"
-            "  - For farewells (e.g., 'Goodbye', 'See you'), respond appropriately (e.g., 'Goodbye! Have a great day!').\n"
-            "  - For chatbot-related queries (e.g., 'Who are you?'), provide relevant details (e.g., 'I am Proxion, an AI assistant created by Madhu Bagamma Gari, specializing in cosmology and space sciences.').\n"
-            "  - For completely unrelated questions (e.g., 'Who is Modi?'), politely inform the user that Proxion only focuses on cosmology (e.g., 'I focus only on cosmology-related topics. Let’s talk about the wonders of the universe!').\n"
+            "- `response` (str): If the query is not related to cosmology handled response:\n"
         )
 
         result: CosmologyQueryCheck = await self.cosmology_query_check.ainvoke(await self._get_messages(query_prompt))
@@ -118,15 +114,13 @@ class ProxionThinkWorkflow:
         await self._yield_status("⏳ Thinking...", state)
         
         execution_prompt = f"""
-            {PROXION_THINKING_PROMPT.format(
-                user_query=state["user_query"]
-            )}
-            
-            Once the internal thoughts are generated, return the response in JSON format with the following keys:
+            Return the response in JSON format with the following keys:
+            - `thoughts` (str): Internal thoughts & discussion about the user query. with line breaks for readability.
+            - `requires_tool_call` (bool): A boolean value indicating whether an external tool call is needed (e.g., if real-time data, sources, or external knowledge are required to enhance the response).                
 
-            - "thoughts": A detailed explanation of your internal thoughts and discussion on the user's query.
-            - "requires_tool_call": A boolean value indicating whether an external tool call is needed (e.g., if real-time data, sources, or external knowledge are required to enhance the response).    
-            
+            User Query: {state['user_query']}
+
+            {PROXION_THINKING_PROMPT}
         """
         response : ThinkingOutput = await self.thinking.ainvoke(await self._get_messages(execution_prompt))
 
@@ -190,7 +184,7 @@ class ProxionThinkWorkflow:
     
     async def initial_response(self, state: WorkFlowState) -> dict:
         await self._verbose_print("Generating response.", state)
-        await self._yield_status("📝 Generating initial response...", state)
+        await self._yield_status("Generating initial response...", state)
 
         user_query = state["user_query"]
         previous_thoughts = state.get("thoughts", "No previous thoughts generated.")
@@ -202,12 +196,20 @@ class ProxionThinkWorkflow:
             tool_responses_text = "No additional tool responses available."
 
         prompt = (
-            f"User Query: {user_query}\n\n"
-            f"Additional tool responses:\n{tool_responses_text}\n\n"
-            f"Previous internal thoughts & discussions:\n{previous_thoughts}\n\n"
-            f"Generate a detailed response based on the user query and incorporate previous thoughts and tool responses."
+            f"# User Query\n"
+            f"{user_query}\n\n"
+            f"## Additional Tool Responses\n"
+            f"{tool_responses_text}\n\n"
+            f"## Previous Internal Thoughts & Discussions\n"
+            f"{previous_thoughts}\n\n"
+            f"## Instructions\n"
+            f"- Utilize the previous thoughts and discussions as a reference.\n"
+            f"- Follow the structure outlined in previous thoughts to ensure a well-organized response.\n"
+            f"- If tool responses provide additional insights, incorporate them appropriately.\n"
+            f"- Maintain coherence, clarity, and a professional tone.\n"
+            f"- Structure the response in a logical, step-by-step manner.\n"
+            f"- Ensure the response is written in the best, professional, and beautifully formatted Markdown.\n"
         )
-
 
         try:
             response = await self.llm.ainvoke(await self._get_messages(prompt))
@@ -223,31 +225,61 @@ class ProxionThinkWorkflow:
         user_query = state.get("user_query", "No query provided.")
         mode = state.get("selected_mode", "Casual")
         
-        await self._yield_status(f"💡 Applying explanation mode: {mode}...", state)
-        
+        await self._yield_status(f"Applying explanation mode: {mode}...", state)
 
-        explanation_prompts = {
+        explanation_templates = {
             "Scientific": (
-                f"User Query: {user_query}\n\n"
-                f"Provide a technical and detailed explanation of the following response with precise terminology and a formal tone:\n\n{base_response}"
+                f"# User Query\n"
+                f"{user_query}\n\n"
+                f"## Instructions\n"
+                f"- Provide a **technical and detailed explanation**.\n"
+                f"- Use **precise terminology** and a **formal tone**.\n"
+                f"- Maintain **clear structure** with sections and bullet points.\n"
+                f"- Ensure clarity and depth in the explanation.\n\n"
+                f"## Response\n"
+                f"{base_response}"
             ),
             "Story": (
-                f"User Query: {user_query}\n\n"
-                f"Transform the following response into an engaging and imaginative story format:\n\n{base_response}"
+                f"# User Query\n"
+                f"{user_query}\n\n"
+                f"## Instructions\n"
+                f"- Rewrite the response as an **engaging and imaginative story**.\n"
+                f"- Use **rich descriptions** and **smooth flow**.\n"
+                f"- Maintain a **clear beginning, middle, and end**.\n"
+                f"- Keep it **captivating and immersive**.\n\n"
+                f"## Story\n"
+                f"{base_response}"
             ),
             "Casual": (
-                f"User Query: {user_query}\n\n"
-                f"Rephrase the following response in a friendly, easy-to-understand manner suitable for everyday conversation:\n\n{base_response}"
+                f"# User Query\n"
+                f"{user_query}\n\n"
+                f"## Instructions\n"
+                f"- Make the response **friendly and easy to understand**.\n"
+                f"- Use **simple language** and **conversational tone**.\n"
+                f"- Break content into **short paragraphs**.\n"
+                f"- Highlight key points with **bold** or *italics* where needed.\n\n"
+                f"## Casual Explanation\n"
+                f"{base_response}"
             ),
             "Kids": (
-                f"User Query: {user_query}\n\n"
-                f"Explain the following response in a very simple and fun way so that a child can understand. Use short sentences and easy words with emojis:\n\n{base_response}"
+                f"# User Query\n"
+                f"{user_query}\n\n"
+                f"## Instructions\n"
+                f"- Explain the response in a **fun and simple way**.\n"
+                f"- Use **short sentences** and **easy words**.\n"
+                f"- Add **a playful tone** to make it engaging.\n"
+                f"- Include **fun elements** like exclamations or small surprises! 🎉✨\n"
+                f"- Use **emojis** to make it even more fun! 😄🎈🎨\n\n"
+                f"## Explanation for Kids\n"
+                f"{base_response} 🐱🎉"
             ),
         }
 
+        prompt = explanation_templates[mode]
+
         await self._verbose_print(f"Re-invoking model for {mode} mode.", state)
 
-        response = await self.llm.ainvoke(await self._get_messages(explanation_prompts[mode]))
+        response = await self.llm.ainvoke(await self._get_messages(prompt))
         modified_response = response.content
 
         return {"refined_response": modified_response}
