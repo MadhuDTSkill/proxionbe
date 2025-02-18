@@ -13,7 +13,6 @@ class WorkFlowState(TypedDict):
     tool_responses : Dict[str, str]
     refined_response: str
     final_response: Dict[str, str]
-    requires_tool_call : bool
 
     
 class CosmologyQueryCheck(BaseModel):
@@ -37,8 +36,11 @@ class ThinkingOutput(BaseModel):
     thoughts: str = Field(
         description="Internal thoughts & discussion about the user query."
     )
-    requires_tool_call: bool = Field(
-        description="Indicates whether external knowledge, real-time data, or the latest sources (e.g., Wikipedia, Arxiv, DuckDuckGo) "
-                    "are required to enhance the response based on the user query."
-    )
+    
+    
+    
+requires_tool_call: bool = Field(
+    description="Indicates whether external knowledge, real-time data, or the latest sources (e.g., Wikipedia, Arxiv, DuckDuckGo) "
+                "are required to enhance the response based on the user query."
+)
 

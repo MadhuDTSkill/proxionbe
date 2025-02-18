@@ -1,10 +1,12 @@
+import re
 from typing import Annotated
 from langchain_core.tools import tool
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain_community.tools import WikipediaQueryRun, DuckDuckGoSearchRun
 from langchain_community.document_loaders import UnstructuredURLLoader
-import re
 from duckduckgo_search.exceptions import RatelimitException
+from django.core.files.base import ContentFile
+from chats_app.models import File
 
 
 @tool("Wikipedia")
@@ -76,3 +78,27 @@ def calculator_tool(expression: Annotated[str, "A string containing a mathematic
         return result
     except Exception as e:
         return f"Error: {str(e)}"
+
+
+@tool("File Creator")
+def file_creator_tool(
+    file_name: Annotated[str, "The name of the file including extension."],
+    file_content: Annotated[str, "The content to be written into the file."]
+) -> str:
+    """
+    Creates a file, saves it in the Django model, and returns the file's URL.
+
+    Returns:
+        str: The URL of the uploaded file or an error message.
+    """
+    try:
+        if "." not in file_name:
+            return "Error: Invalid file name. Please include a valid extension (e.g., .txt, .py, .json)."
+
+        file_instance = File(name = file_name)
+        file_instance.file.save(file_name, ContentFile(file_content))
+        file_instance.save()
+
+        return file_instance.file.url
+    except Exception as e:
+        return f"Error: Failed to create and upload file. {str(e)}"

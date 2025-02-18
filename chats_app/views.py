@@ -1,7 +1,9 @@
+import base64
+from groq import Groq
 from datetime import datetime, timedelta
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
-from rest_framework.generics import ListAPIView, RetrieveDestroyAPIView
+from rest_framework.generics import ListAPIView, RetrieveDestroyAPIView, CreateAPIView
 from .models import Chat, LLMResponse, ChatNotes
 from .serializers import ChatSerializer, LLMResponseSerializer, ChatNotesSerializer
 
@@ -54,6 +56,61 @@ class ChatViewSet(ModelViewSet):
         }
     
         return Response(response_data)
+    
+    
+class NewChatAttachmentView(CreateAPIView):
+    queryset = Chat.objects.all()
+    serializer_class = ChatSerializer
+
+    def get_queryset(self):
+        return super().get_queryset().filter(user=self.request.user)
+    
+    def get_object(self):
+        chat_id = self.kwargs.get('chat_id')
+        return Chat.objects.get(id=chat_id)
+
+    def get_message_from_image(self, image):
+        """Encodes the image and gets a message using Groq API."""
+        client = Groq()
+
+        # Encode image to base64
+        base64_image = base64.b64encode(image.read()).decode('utf-8')
+
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What's in this image?"},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}",
+                            },
+                        },
+                    ],
+                }
+            ],
+            model="llama-3.2-11b-vision-preview",
+        )
+
+        return chat_completion.choices[0].message.content
+
+    def post(self, request, *args, **kwargs):
+        file = request.FILES.get('file')
+
+        if not file:
+            return Response({"error": "No file provided"}, status=400)
+        try:
+            message = self.get_message_from_image(file)
+            chat = self.get_object()
+            chat.img_attachment_content = message
+            chat.save()
+            return Response({"detail": f"{file.name} image message added successfully."}, status=201)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+        
+        
     
 class ChatNotesListView(ListAPIView):
 
