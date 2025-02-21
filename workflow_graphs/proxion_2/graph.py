@@ -128,7 +128,7 @@ class ProxionThinkWorkflow:
 
         return {
             "thoughts": response.thoughts,
-            "requires_tool_call": response.requires_tool_call,
+            "requires_tool_call": False,
         }
 
 

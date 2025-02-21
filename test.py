@@ -318,13 +318,10 @@ class ProxionWorkflow:
 # -------------------------------
 
 
-# llm_instance = ChatGroq(model="llama-3.3-70b-versatile")
 llm_instance = ChatGroq(model="llama3-70b-8192")
-# llm_instance = ChatGroq(model="mixtral-8x7b-32768")
-# llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
 
 tool_llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
 
-# proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
-# answer = proxion.run("What is the black hole ?", selected_mode="Kids")
-# print("\n\nProxion:", answer)
+proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
+answer = proxion.run("What is the black hole ?", selected_mode="Kids")
+print("\n\nProxion:", answer)
