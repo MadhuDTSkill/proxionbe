@@ -6,7 +6,7 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from .prompts import PROXION_SYSTEM_MESSAGE, PROXION_THINKING_PROMPT
-from .schemas import WorkFlowState, CosmologyQueryCheck, ThinkingOutput
+from .schemas import WorkFlowState, CosmologyQueryCheck, ThinkingOutput, ProxionPerspectiveOutput
 from .tools import wikipedia_tool, calculator_tool, web_url_tool, duckduckgo_search_tool
 from chats_app.models import Chat
 from auth_app.models import User
@@ -27,6 +27,7 @@ class ProxionThinkWorkflow:
         
         self.cosmology_query_check = self.llm.with_structured_output(CosmologyQueryCheck, method="json_mode")
         self.thinking = self.llm.with_structured_output(ThinkingOutput, method="json_mode")
+        self.proxion_perspective_output = self.llm.with_structured_output(ProxionPerspectiveOutput, method="json_mode")
         self.knowledge_retriever = self.tool_llm.bind_tools(self.tools)
         
         
@@ -98,14 +99,14 @@ class ProxionThinkWorkflow:
             f"asking about chatbot name or developer details. "
             "Respond in JSON format with the following keys:\n"
             "- `is_cosmology_related` (bool): Indicates whether the query is valid.\n"
-            "- `response` (str): If the query is not related to cosmology handled response:\n"
+            "- `response` (str): If the query is not related to cosmology handled response otherwise return empty string like ''\n"
         )
 
         result: CosmologyQueryCheck = await self.cosmology_query_check.ainvoke(await self._get_messages(query_prompt))
 
         return {
             "is_cosmology_related": result.is_cosmology_related, 
-            "refined_response": result.response
+            "refined_response": result.response if not result.response else ''
         }
 
 
@@ -128,7 +129,7 @@ class ProxionThinkWorkflow:
 
         return {
             "thoughts": response.thoughts,
-            "requires_tool_call": False,
+            "requires_tool_call": response.requires_tool_call,
         }
 
 
@@ -138,20 +139,19 @@ class ProxionThinkWorkflow:
         
 
         user_query = state["user_query"]
-        sections = state["sections"]
-        sections_text = ", ".join(sections)
+        previous_thoughts = state.get("thoughts", "No previous thoughts generated.")
 
         
 
         retrieval_prompt = (
             f"Given the following user query:\n\n"
             f"{user_query}\n\n"
-            f"And the Topic breakdown sections:\n\n"
-            f"{sections_text}\n\n"
+            f"## Previous Internal Thoughts & Discussions\n"
+            f"{previous_thoughts}\n\n"
             f"What additional knowledge or tool call suggestions would improve this response?"
         )        
 
-        response = self.knowledge_retriever.ainvoke(await self._get_messages(retrieval_prompt))
+        response = await self.knowledge_retriever.ainvoke(await self._get_messages(retrieval_prompt))
         tools_by_name = {tool.name: tool for tool in self.tools}
         tool_responses = {}
 
@@ -289,15 +289,47 @@ class ProxionThinkWorkflow:
         await self._verbose_print("Generating final response...", state)
         await self._yield_status("✅ Generating final response...", state)
         
+        refined_response = state.get("refined_response")
+
+        if state["is_cosmology_related"]:
+            previous_thoughts = state.get("thoughts", "No previous thoughts generated.")
+            
+            prompt = f"""
+                User Query: {state['user_query']}
+                
+                Previous Internal Thoughts & Discussions: {previous_thoughts}
+                
+                Normal Response: {state.get('refined_response')}
+                
+                Return the response in JSON format with the following key:
+                - `response` (str): The **Proxion View**, a unique perspective derived from available theories, offering a speculative yet logical insight on the given topic. 
+                It presents an imaginative yet thoughtful take, aiming to spark curiosity and new ways of thinking. While grounded in scientific concepts, it explores possibilities 
+                beyond conventional understanding, bridging known facts with intriguing speculation. The response should be a **single paragraph (1-10 sentences only).**
+            """
+            
+            response : ProxionPerspectiveOutput = await self.proxion_perspective_output.ainvoke(await self._get_messages(prompt))
+            generated_proxion_view = response.response
+            
+            final_response = (
+                f"{refined_response}\n\n"
+                f"🔮 **Proxion View :**\n"
+                f"{generated_proxion_view}"
+            )
+        else:
+            final_response = refined_response
+        
         final_response = {
             "chat": str(self.chat.id),
             "prompt": state["user_query"],
-            "response": state["refined_response"],
+            "response": final_response,
             "tool_responses": state.get("tool_responses", {}),
             "is_thoughted": state.get("is_cosmology_related", False),
             "thinked_thoughts": state.get("thoughts", "No thoughts generated."),
         }
+        
         return {"final_response": final_response}
+
+
 
 
     async def ainvoke(self, user_query: str, selected_mode: str = "Casual") -> str:

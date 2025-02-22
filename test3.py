@@ -2,6 +2,7 @@ import operator
 from typing import TypedDict, List, Literal, Dict, Sequence
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode
 from langchain_groq import ChatGroq
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.tools import tool, BaseTool
@@ -35,12 +36,100 @@ AGENT_SYSTEM_MESSAGE = (
             )
 
 
-agents = [
-    {"name": "Content Researcher", "role": "Research and provide raw content", "backstory": "Expert in research."},
-    {"name": "Content Writer", "role": "Convert research into a structured blog", "backstory": "Professional writer."},
-    {"name": "Editor", "role": "Proofread and improve the blog", "backstory": "Ensures clarity and correctness."},
+example_agents = [
+    # Blog Creation Workflow
+    [
+        {"name": "Content Researcher", "role": "Research and provide raw content", "backstory": "Expert in research.", "tools": ["duckduckgo_search_tool", "wikipedia_tool"]},
+        {"name": "Content Writer", "role": "Convert research into a structured blog", "backstory": "Professional writer."},
+        {"name": "Editor", "role": "Proofread and improve the blog", "backstory": "Ensures clarity and correctness."},
+    ],
+    
+    # Social Media Content Creation
+    [
+        {"name": "Trend Analyst", "role": "Analyze current social media trends", "backstory": "Keeps track of viral trends and audience behavior.", "tools": ["duckduckgo_search_tool"]},
+        {"name": "Content Strategist", "role": "Plan engaging content strategies", "backstory": "Expert in social media growth and engagement."},
+        {"name": "Graphic Designer", "role": "Design visually appealing posts", "backstory": "Creates eye-catching graphics and layouts."},
+        {"name": "Social Media Manager", "role": "Schedule and post content", "backstory": "Ensures timely and effective content publishing."},
+    ],
+
+    # AI-Powered Code Development
+    [
+        {"name": "Requirement Analyst", "role": "Understand and define software requirements", "backstory": "Ensures clear, structured problem definitions."},
+        {"name": "Code Generator", "role": "Write functional code snippets", "backstory": "AI-powered assistant for generating efficient code."},
+        {"name": "Code Reviewer", "role": "Analyze and optimize code", "backstory": "Detects inefficiencies and suggests improvements."},
+        {"name": "Deployment Engineer", "role": "Deploy and monitor applications", "backstory": "Manages cloud-based or on-premise deployments."},
+    ],
+
+    # Data Science & Machine Learning Pipeline
+    [
+        {"name": "Data Collector", "role": "Gather relevant datasets", "backstory": "Specialist in data sourcing and preprocessing.", "tools": ["duckduckgo_search_tool", "wikipedia_tool"]},
+        {"name": "Data Cleaner", "role": "Process and clean raw data", "backstory": "Handles missing values, normalization, and formatting."},
+        {"name": "Feature Engineer", "role": "Extract meaningful features", "backstory": "Transforms raw data into useful inputs for models."},
+        {"name": "Model Trainer", "role": "Train ML models on prepared data", "backstory": "Optimizes model performance and hyperparameters."},
+        {"name": "Model Evaluator", "role": "Validate model accuracy and performance", "backstory": "Performs statistical analysis and cross-validation."},
+    ],
+
+    # Marketing & Advertising Workflow
+    [
+        {"name": "Market Researcher", "role": "Analyze competitors and market needs", "backstory": "Gathers insights on audience behavior.", "tools": ["duckduckgo_search_tool", "wikipedia_tool"]},
+        {"name": "Copywriter", "role": "Write compelling marketing copy", "backstory": "Specializes in persuasive and engaging content."},
+        {"name": "SEO Specialist", "role": "Optimize content for search engines", "backstory": "Ensures higher ranking in search results."},
+        {"name": "Marketing Strategist", "role": "Develop marketing strategies", "backstory": "Plans and executes promotional campaigns."},
+        {"name": "Ad Manager", "role": "Manage and optimize online ads", "backstory": "Handles PPC campaigns and performance tracking."},
+    ],
+
+    # Customer Support Automation
+    [
+        {"name": "Support Bot", "role": "Handle basic customer queries", "backstory": "AI-powered assistant for quick customer support."},
+        {"name": "Ticket Manager", "role": "Assign unresolved queries to agents", "backstory": "Sorts customer issues efficiently."},
+        {"name": "Customer Support Agent", "role": "Resolve complex customer issues", "backstory": "Expert in troubleshooting and user satisfaction."},
+        {"name": "Feedback Analyst", "role": "Analyze customer feedback", "backstory": "Extracts insights to improve services."},
+    ],
+
+    # Video Content Production
+    [
+        {"name": "Scriptwriter", "role": "Write engaging scripts for videos", "backstory": "Crafts compelling narratives and dialogues."},
+        {"name": "Storyboard Artist", "role": "Visualize video sequences", "backstory": "Creates rough sketches for scene planning."},
+        {"name": "Video Editor", "role": "Edit and enhance raw footage", "backstory": "Specializes in post-production editing."},
+        {"name": "Voice Over Artist", "role": "Provide professional narration", "backstory": "Delivers engaging and clear voiceovers."},
+        {"name": "Animator", "role": "Create motion graphics and animations", "backstory": "Brings visuals to life with animations."},
+    ],
+
+    # Cybersecurity & Threat Analysis
+    [
+        {"name": "Threat Analyst", "role": "Identify and analyze security threats", "backstory": "Specialist in cybersecurity risk assessment.", "tools": ["duckduckgo_search_tool"]},
+        {"name": "Penetration Tester", "role": "Simulate cyber attacks to find vulnerabilities", "backstory": "Finds security weaknesses before hackers do."},
+        {"name": "Incident Responder", "role": "Mitigate and respond to security breaches", "backstory": "Handles real-time threat response."},
+        {"name": "Compliance Officer", "role": "Ensure security policies are followed", "backstory": "Keeps systems in line with regulations."},
+    ],
+
+    # Legal Document & Contract Review
+    [
+        {"name": "Legal Researcher", "role": "Analyze laws and regulations", "backstory": "Expert in legal research and case studies.", "tools": ["duckduckgo_search_tool", "wikipedia_tool"]},
+        {"name": "Contract Drafter", "role": "Write and format legal agreements", "backstory": "Ensures contracts are clear and enforceable."},
+        {"name": "Legal Reviewer", "role": "Proofread and refine legal documents", "backstory": "Checks for compliance and accuracy."},
+        {"name": "Negotiation Expert", "role": "Assist in contract negotiations", "backstory": "Helps parties reach favorable terms."},
+    ],
+
+    # E-Commerce Optimization
+    [
+        {"name": "Product Analyst", "role": "Research best-selling products", "backstory": "Analyzes trends to recommend profitable items.", "tools": ["duckduckgo_search_tool"]},
+        {"name": "Listing Optimizer", "role": "Improve product descriptions and SEO", "backstory": "Ensures high visibility on search engines."},
+        {"name": "Pricing Strategist", "role": "Optimize pricing strategies", "backstory": "Finds the balance between profit and competitiveness."},
+        {"name": "Customer Experience Specialist", "role": "Enhance shopping experience", "backstory": "Improves website usability and checkout flow."},
+    ],
+
+    # Human Resource Management
+    [
+        {"name": "Talent Scout", "role": "Identify potential job candidates", "backstory": "Expert in recruitment and talent acquisition.", "tools": ["duckduckgo_search_tool"]},
+        {"name": "Resume Screener", "role": "Review and shortlist resumes", "backstory": "Finds the best candidates for job roles."},
+        {"name": "Interview Coach", "role": "Prepare candidates for interviews", "backstory": "Guides job seekers to perform well."},
+        {"name": "HR Policy Advisor", "role": "Develop and review company policies", "backstory": "Ensures legal compliance and employee well-being."},
+    ],
 ]
 
+
+agents = example_agents[0]
 
 @tool("Wikipedia")
 def wikipedia_tool(query: Annotated[str, "The search term to find relevant information from Wikipedia."]) -> str:
@@ -100,10 +189,10 @@ class ProxionWorkflow:
         
         self.workflow = self._build_workflow()
 
-        # graph_png = self.workflow.get_graph(xray=True).draw_mermaid_png()
-        # image_file = "NewAgentWorkflow.png"
-        # with open(image_file, "wb") as file:
-        #     file.write(graph_png)
+        graph_png = self.workflow.get_graph(xray=True).draw_mermaid_png()
+        image_file = "NewAgentWorkflow.png"
+        with open(image_file, "wb") as file:
+            file.write(graph_png)
 
     def _verbose_print(self, message: str):
         if self.verbose:
@@ -113,33 +202,46 @@ class ProxionWorkflow:
     def _build_workflow(self):
         builder = StateGraph(State)
         
-        builder.add_node('Super Agent', self.super_agent)
-        builder.add_node('Dynamic Agent', self.dynamic_agent)
+        # Define the core workflow components
+        builder.add_node('Main Agent', self.super_agent)
+        builder.add_node('Task Handler', self.dynamic_agent)
+        builder.add_node('Tool Executor', ToolNode)
         
-        builder.add_edge(START, 'Super Agent')
-        builder.add_edge('Dynamic Agent', 'Super Agent')
+        # Define the starting flow
+        builder.add_edge(START, 'Main Agent')
+        builder.add_edge('Tool Executor', 'Task Handler')
         
+        # Determine the next step based on task completion
         builder.add_conditional_edges(
-            'Super Agent',
-            lambda state: "END" if state['next_agent'] == 'Task Completed' else "Dynamic Agent",
+            'Main Agent',
+            lambda state: "FINISH" if state['next_agent'] == 'Task Completed' else "NOT FINISH",
             {
-                'Dynamic Agent': 'Dynamic Agent',
-                'END': END
+                'NOT FINISH': 'Task Handler',
+                'FINISH': END
             },
         )
-    
+        
+        # Decide whether to call tools or return to the main agent
+        builder.add_conditional_edges(
+            'Task Handler',
+            lambda state: "EXECUTE TOOL" if state["messages"][-1].tool_calls else "Main Agent",
+            {
+                'Main Agent': 'Main Agent',
+                'EXECUTE TOOL': "Tool Executor"
+            },
+        )
+
         return builder.compile()
+
 
 
     def super_agent(self, state: Dict) -> Dict:
         self._verbose_print("Super Agent: Determining next agent and task prompt.")
 
-        agents = [
-            {"name": "Content Researcher", "role": "Research and provide raw content"},
-            {"name": "Content Writer", "role": "Convert research into a structured blog"},
-        ]
-
-        agents_info = "\n".join([f"- {agent['name']}: {agent['role']}" for agent in agents])
+        agents_info = "\n".join([
+            f"- {agent['name']}: {agent['role']} (Tools: {', '.join(agent.get('tools', ['None']))})"
+            for agent in agents
+        ])
 
         execution_prompt = (
             "Based on the following available agents and their roles, determine the next best agent to handle the task for the user:\n"
@@ -172,11 +274,6 @@ class ProxionWorkflow:
 
     def dynamic_agent(self, state: Dict) -> Dict:
         self._verbose_print("Dynamic Agent: Determining next agent and task prompt.")
-
-        agents = [
-            {"name": "Content Researcher", "role": "Research and provide raw content", "backstory": "Expert in research."},
-            {"name": "Content Writer", "role": "Convert research into a structured blog", "backstory": "Professional writer."},
-        ]
 
         next_agent_name = state.get("next_agent")  
         previous_agent_prompt = state.get("agent_prompt", "") 
@@ -230,7 +327,7 @@ llm_instance = ChatGroq(model="llama3-70b-8192")
 tool_llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
 
 proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
-messages = proxion.run("Andromeda Galaxy Vs Milky Way Galaxy")
+# messages = proxion.run("Andromeda Galaxy Vs Milky Way Galaxy")
 
-for message in messages:
-    message.pretty_print()
+# for message in messages:
+#     message.pretty_print()

@@ -27,13 +27,13 @@ class Memory:
     def add_user_message(self, message: str):
         timestamp = self.get_timestamp()
         message_with_time = f"{message} \n\n @{timestamp}"
-        self.sql_history_obj.add_user_message(HumanMessage(content=message_with_time))
+        self.sql_history_obj.add_user_message(HumanMessage(content=message))
         self.messages = self.get_trimmed_messages()
 
     def add_ai_message(self, message: str):
         timestamp = self.get_timestamp()
         message_with_time = f"{message} \n\n @{timestamp}"
-        self.sql_history_obj.add_ai_message(AIMessage(content=message_with_time))
+        self.sql_history_obj.add_ai_message(AIMessage(content=message))
         self.messages = self.get_trimmed_messages()
                 
     @classmethod
