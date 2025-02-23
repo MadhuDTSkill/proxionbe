@@ -20,7 +20,7 @@ class ProxionThinkWorkflow:
         self.user = user
         self.consumer = consumer
         self.llm : ChatGroq = llm
-        self.memory = Memory.get_memory(str(chat.id), str(self.user.id), 3000, self.llm, True, False, 'human')
+        self.memory = Memory.get_memory(str(chat.id), str(self.user.id), 4000, self.llm, True, False, 'human')
         self.tool_llm : ChatGroq = tool_llm_instance if tool_llm_instance else llm
         self.verbose = verbose
         self.tools : List[BaseTool] = [wikipedia_tool, calculator_tool, web_url_tool, duckduckgo_search_tool]
@@ -106,7 +106,7 @@ class ProxionThinkWorkflow:
 
         return {
             "is_cosmology_related": result.is_cosmology_related, 
-            "refined_response": result.response if not result.response else ''
+            "refined_response": result.response
         }
 
 
@@ -273,7 +273,49 @@ class ProxionThinkWorkflow:
                 f"## Explanation for Kids\n"
                 f"{base_response} 🐱🎉"
             ),
+            "Analytical": (
+                f"# User Query\n"
+                f"{user_query}\n\n"
+                f"## Instructions\n"
+                f"- Break down the topic **logically and step-by-step**.\n"
+                f"- Provide **comparisons, insights, and deep analysis**.\n"
+                f"- Use **structured reasoning and data-driven approach**.\n"
+                f"- Keep explanations **clear and methodical**.\n\n"
+                f"## Analytical Breakdown\n"
+                f"{base_response}"
+            ),
+            "Humorous": (
+                f"# User Query\n"
+                f"{user_query}\n\n"
+                f"## Instructions\n"
+                f"- Make the response **funny, witty, and entertaining**.\n"
+                f"- Use **wordplay, sarcasm, and light humor**.\n"
+                f"- Keep it **informative but with a comedic twist**.\n\n"
+                f"## Humorous Take\n"
+                f"{base_response} 😂"
+            ),
+            "Motivational": (
+                f"# User Query\n"
+                f"{user_query}\n\n"
+                f"## Instructions\n"
+                f"- Provide an **uplifting and encouraging response**.\n"
+                f"- Use **inspirational language and positivity**.\n"
+                f"- End with a **powerful takeaway or call to action**.\n\n"
+                f"## Motivational Boost\n"
+                f"{base_response} 🚀"
+            ),
+            "Science Fiction": (
+                f"# User Query\n"
+                f"{user_query}\n\n"
+                f"## Instructions\n"
+                f"- Turn the response into an **epic sci-fi narrative**.\n"
+                f"- Use **futuristic themes, advanced tech, and imaginative storytelling**.\n"
+                f"- Keep it **engaging and filled with sci-fi elements**.\n\n"
+                f"## Sci-Fi Version\n"
+                f"{base_response} 🚀👽"
+            ),
         }
+
 
         prompt = explanation_templates[mode]
 
@@ -304,15 +346,14 @@ class ProxionThinkWorkflow:
                 Return the response in JSON format with the following key:
                 - `response` (str): The **Proxion View**, a unique perspective derived from available theories, offering a speculative yet logical insight on the given topic. 
                 It presents an imaginative yet thoughtful take, aiming to spark curiosity and new ways of thinking. While grounded in scientific concepts, it explores possibilities 
-                beyond conventional understanding, bridging known facts with intriguing speculation. The response should be a **single paragraph (1-10 sentences only).**
+                beyond conventional understanding, bridging known facts with intriguing speculation. The response should be a **single paragraph (1-5 sentences only) and start with In my perspective...**
             """
-            
+             
             response : ProxionPerspectiveOutput = await self.proxion_perspective_output.ainvoke(await self._get_messages(prompt))
             generated_proxion_view = response.response
             
             final_response = (
                 f"{refined_response}\n\n"
-                f"🔮 **Proxion View :**\n"
                 f"{generated_proxion_view}"
             )
         else:
@@ -328,8 +369,6 @@ class ProxionThinkWorkflow:
         }
         
         return {"final_response": final_response}
-
-
 
 
     async def ainvoke(self, user_query: str, selected_mode: str = "Casual") -> str:
@@ -365,7 +404,7 @@ class ProxionThinkWorkflow:
     async def init_graph(cls, *args, **kwargs):
         graph = cls(*args, **kwargs)
         graph.workflow = await graph._build_workflow()
-        await graph.get_flow_image()
+        # await graph.get_flow_image()
         return graph
 
         

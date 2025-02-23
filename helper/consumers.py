@@ -61,6 +61,7 @@ class BaseChatAsyncJsonWebsocketConsumer(AsyncJsonWebsocketConsumer):
         if serializer.is_valid():
             serializer.save()
             return True
+        print(serializer.errors)
         return False
     
     
