@@ -1,6 +1,5 @@
 
 from django.urls import path, include
-import chats_app.ws_urls
 
 
 urlpatterns = [
@@ -8,9 +7,8 @@ urlpatterns = [
     path('api/chat/', include('chats_app.urls')),
 ]
 
-ws_urlpatterns = [
-]
 
-
-
-ws_urlpatterns += chats_app.ws_urls.urlpatterns
+def get_ws_urlpatterns():
+    from chats_app.ws_urls import urlpatterns
+    return urlpatterns
+    
