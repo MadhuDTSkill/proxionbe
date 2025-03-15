@@ -317,11 +317,31 @@ class ProxionWorkflow:
 # Example Usage
 # -------------------------------
 
+import os
+from langchain_core.messages.utils import trim_messages
+from langchain_openai import ChatOpenAI
 
+
+# llm_instance = ChatOpenAI(model_name="llama3-70b-8192", base_url="https://api.groq.com/openai/v1", api_key=os.environ["GROQ_API_KEY"])
 llm_instance = ChatGroq(model="llama3-70b-8192")
 
-tool_llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
+# llm_instance.bind_tools([],)
 
-proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
-answer = proxion.run("What is the black hole ?", selected_mode="Kids")
-print("\n\nProxion:", answer)
+# mgs = [HumanMessage(content='Write a short blog post on Egypt pyramids', additional_kwargs={}, response_metadata={}), AIMessage(content='Next Agent: Content Researcher : Prompt To Follow: Research and gather information about Egypt pyramids', additional_kwargs={}, response_metadata={})]
+# print(trim_messages(
+#     mgs,
+#     max_tokens=5000,
+#     strategy='last',
+#     token_counter=llm_instance,
+#     include_system=True,
+#     allow_partial=False,
+#     start_on="human"
+# ))
+
+print(dir(llm_instance))
+
+# tool_llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
+
+# proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
+# answer = proxion.run("What is the black hole ?", selected_mode="Kids")
+# print("\n\nProxion:", answer)

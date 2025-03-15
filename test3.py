@@ -322,12 +322,12 @@ class ProxionWorkflow:
 # -------------------------------
 
 
-llm_instance = ChatGroq(model="llama3-70b-8192")
+llm_instance = ChatGroq(model="gemma2-9b-it")
 
-tool_llm_instance = ChatGroq(model="deepseek-r1-distill-llama-70b")
+tool_llm_instance = ChatGroq(model="gemma2-9b-it")
 
 proxion = ProxionWorkflow(llm_instance, tool_llm_instance, verbose=True)
-# messages = proxion.run("Andromeda Galaxy Vs Milky Way Galaxy")
+messages = proxion.run("Andromeda Galaxy Vs Milky Way Galaxy")
 
-# for message in messages:
-#     message.pretty_print()
+for message in messages:
+    message.pretty_print()
